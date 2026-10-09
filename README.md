@@ -14,8 +14,8 @@ The build is signed for sideloading, not for the Play Store.
 
 The desktop build is the same player, not the Android app in a wrapper. The download includes VLC's engine.
 
-- [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-windows.exe)
-- [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-mac.dmg) for Apple silicon
+- [Velo-1.0.0.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-1.0.0.exe)
+- [Velo-1.0.0.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-1.0.0.dmg) for Apple silicon
 
 An Intel Mac build is not in this release. Apple silicon and Windows are.
 

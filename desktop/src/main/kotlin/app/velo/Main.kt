@@ -1,0 +1,418 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
+package app.velo
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import java.awt.FileDialog
+import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+
+private val Ink = Color(0xFF07080A)
+private val InkRaised = Color(0xFF14161C)
+private val Cream = Color(0xFFF3EFE6)
+private val CreamDim = Color(0xFFA39E93)
+private val Tungsten = Color(0xFFE4A15A)
+private val Hairline = Color(0x22F3EFE6)
+
+fun main() = application {
+    val engine = remember { Engine().also { it.start() } }
+    DisposableEffect(engine) { onDispose { engine.release() } }
+    val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
+    var fullscreen by remember { mutableStateOf(false) }
+    var adjust by remember { mutableStateOf(false) }
+    var spaceDown by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    windowState.placement = if (fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
+
+    Window(
+        onCloseRequest = ::exitApplication,
+        state = windowState,
+        title = "Velo",
+    ) {
+        val outfit = remember { loadOutfit() }
+        val watching = engine.tick
+        LaunchedEffect(engine.phase, watching) { focus.requestFocus() }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Ink)
+                .focusRequester(focus)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (engine.phase != "player") return@onKeyEvent false
+                    if (event.key == Key.Spacebar) {
+                        if (event.type == KeyEventType.KeyDown && !spaceDown) {
+                            spaceDown = true
+                            engine.toggle()
+                        }
+                        if (event.type == KeyEventType.KeyUp) spaceDown = false
+                        return@onKeyEvent true
+                    }
+                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft -> engine.seekBy(-10_000)
+                        Key.DirectionRight -> engine.seekBy(10_000)
+                        Key.DirectionUp -> engine.setVolume(engine.volume + 5)
+                        Key.DirectionDown -> engine.setVolume(engine.volume - 5)
+                        Key.F -> fullscreen = !fullscreen
+                        Key.Escape -> if (fullscreen) fullscreen = false else if (adjust) adjust = false else engine.back()
+                        else -> return@onKeyEvent false
+                    }
+                    true
+                },
+        ) {
+            if (engine.phase == "player") {
+                Stage(engine, outfit, adjust, { adjust = !adjust }, { engine.back() }, { fullscreen = !fullscreen })
+            } else {
+                Home(engine, outfit, window)
+            }
+        }
+    }
+}
+
+private fun loadOutfit(): FontFamily {
+    val stream = object {}::class.java.getResourceAsStream("/font/outfit.ttf") ?: return FontFamily.SansSerif
+    val file = File.createTempFile("velo-outfit", ".ttf")
+    file.deleteOnExit()
+    stream.use { file.writeBytes(it.readBytes()) }
+    return FontFamily(
+        androidx.compose.ui.text.platform.Font(file = file, weight = FontWeight.Normal),
+        androidx.compose.ui.text.platform.Font(file = file, weight = FontWeight.Medium),
+        androidx.compose.ui.text.platform.Font(file = file, weight = FontWeight.SemiBold),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Home(engine: Engine, outfit: FontFamily, window: java.awt.Frame) {
+    var armClear by remember { mutableStateOf(false) }
+    var unfinishedOnly by remember { mutableStateOf(false) }
+    var sortByName by remember { mutableStateOf(false) }
+    val recents = engine.recents
+    val resume = recents.firstOrNull { unfinished(it) }
+    val shown = recents
+        .let { if (unfinishedOnly) it.filter { item -> unfinished(item) } else it }
+        .let { if (sortByName) it.sortedBy { item -> item.file.name.lowercase() } else it }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 48.dp, vertical = 36.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(14.dp).clip(CircleShape).background(Tungsten))
+            Spacer(Modifier.width(10.dp))
+            Text("VELO", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, letterSpacing = 2.4.sp)
+        }
+        Spacer(Modifier.height(36.dp))
+        Text("Anything this computer\ncan decode.", color = Cream, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 42.sp, lineHeight = 46.sp)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            engine.failure ?: "Open a video. Picture, sound, and subtitles stay out of the way until you ask.",
+            color = CreamDim,
+            fontFamily = outfit,
+            fontSize = 16.sp,
+        )
+        Spacer(Modifier.height(28.dp))
+        Box(
+            Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(16.dp)).background(Tungsten).clickable {
+                pick(window, true)?.let { files ->
+                    val first = files.first()
+                    val recent = engine.recents.firstOrNull { it.file.absolutePath == first.absolutePath }
+                    val start = if (recent != null && unfinished(recent)) recent.positionMs else 0L
+                    engine.open(first, start)
+                }
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Open a video", color = Ink, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        }
+        if (resume != null) {
+            Spacer(Modifier.height(10.dp))
+            Box(
+                Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(16.dp)).background(InkRaised)
+                    .clickable { engine.open(resume.file, resume.positionMs) }.padding(horizontal = 18.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text("Resume  ·  ${resume.file.name}", color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (recents.isNotEmpty()) {
+                QuietChip("Unfinished", unfinishedOnly, outfit) { unfinishedOnly = !unfinishedOnly }
+                QuietChip(if (sortByName) "A–Z" else "Newest", sortByName, outfit) { sortByName = !sortByName }
+                QuietChip(if (armClear) "Erase the list" else "Clear history", armClear, outfit) {
+                    if (armClear) {
+                        armClear = false
+                        engine.clearHistory()
+                    } else armClear = true
+                }
+            }
+            QuietChip("Reset look", false, outfit) { engine.resetLook() }
+        }
+        if (recents.isNotEmpty()) {
+            Spacer(Modifier.height(36.dp))
+            Text("CONTINUE", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
+            Spacer(Modifier.height(12.dp))
+            if (shown.isEmpty()) Text("Nothing unfinished.", color = CreamDim, fontFamily = outfit, fontSize = 14.sp)
+            shown.forEach { item ->
+                RecentRow(item, outfit, { engine.open(item.file, if (unfinished(item)) item.positionMs else 0L) }, { engine.open(item.file, 0) }, { engine.forget(item.file.absolutePath) })
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentRow(item: Desk, outfit: FontFamily, onOpen: () -> Unit, onStart: () -> Unit, onForget: () -> Unit) {
+    val progress = if (item.durationMs > 0) (item.positionMs.toFloat() / item.durationMs).coerceIn(0f, 1f) else 0f
+    val detail = when {
+        item.durationMs <= 0 -> "Open"
+        progress < 0.02f -> formatTime(item.durationMs)
+        progress > 0.97f -> "Finished"
+        else -> "${formatTime((item.durationMs - item.positionMs).coerceAtLeast(0))} left"
+    }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Column(Modifier.clickable(onClick = onOpen)) {
+            Text(item.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
+                    Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row {
+            Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
+            Spacer(Modifier.width(18.dp))
+            Text("Remove", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onForget))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Stage(
+    engine: Engine,
+    outfit: FontFamily,
+    adjust: Boolean,
+    onAdjust: () -> Unit,
+    onBack: () -> Unit,
+    onFull: () -> Unit,
+) {
+    var chrome by remember { mutableStateOf(true) }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { size = it }
+            .onPointerEvent(PointerEventType.Move) { chrome = true }
+            .onPointerEvent(PointerEventType.Scroll) {
+                val delta = it.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                engine.setVolume(engine.volume - (delta * 6).toInt())
+            }
+            .pointerInput(size) {
+                detectTapGestures(
+                    onDoubleTap = { offset ->
+                        if (offset.x < size.width * 0.34f) engine.seekBy(-10_000)
+                        else if (offset.x > size.width * 0.66f) engine.seekBy(10_000)
+                        else engine.toggle()
+                    },
+                    onTap = { chrome = !chrome },
+                )
+            },
+    ) {
+        val frame = engine.frame
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            if (frame == null) return@Canvas
+            val srcW = frame.width.toFloat()
+            val srcH = frame.height.toFloat()
+            val scale = when (engine.fit) {
+                "fill" -> max(size.width / srcW, size.height / srcH)
+                "stretch" -> -1f
+                else -> min(size.width / srcW, size.height / srcH)
+            }
+            if (engine.fit == "stretch") {
+                drawImage(frame, dstSize = IntSize(size.width, size.height))
+            } else {
+                val dw = srcW * scale
+                val dh = srcH * scale
+                drawImage(
+                    frame,
+                    dstOffset = androidx.compose.ui.unit.IntOffset(((size.width - dw) / 2f).toInt(), ((size.height - dh) / 2f).toInt()),
+                    dstSize = IntSize(dw.toInt().coerceAtLeast(1), dh.toInt().coerceAtLeast(1)),
+                )
+            }
+        }
+        if (engine.opening && frame == null) {
+            Text("Opening", color = CreamDim, fontFamily = outfit, modifier = Modifier.align(Alignment.Center))
+        }
+        engine.playError?.let { message ->
+            Column(
+                Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(InkRaised).padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(message, color = Cream, fontFamily = outfit, fontSize = 16.sp)
+                Spacer(Modifier.height(12.dp))
+                Text("Try again", color = Ink, fontFamily = outfit, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Tungsten).clickable { engine.retry() }.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+        }
+        if (chrome) {
+            Row(Modifier.fillMaxWidth().background(Color(0x9907080A)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Back", color = Cream, fontFamily = outfit, modifier = Modifier.clickable(onClick = onBack))
+                Spacer(Modifier.width(18.dp))
+                Text(engine.title, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(if (engine.playing) "Pause" else "Play", color = Cream, fontFamily = outfit, modifier = Modifier.clickable { engine.toggle() })
+                Spacer(Modifier.width(18.dp))
+                Text("Adjust", color = Tungsten, fontFamily = outfit, modifier = Modifier.clickable(onClick = onAdjust))
+                Spacer(Modifier.width(18.dp))
+                Text("Full", color = Cream, fontFamily = outfit, modifier = Modifier.clickable(onClick = onFull))
+            }
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xCC07080A)).padding(16.dp)) {
+                Slider(
+                    value = if (engine.durationMs > 0) engine.positionMs / engine.durationMs.toFloat() else 0f,
+                    onValueChange = { engine.seekTo((it * engine.durationMs).toLong()) },
+                    onValueChangeFinished = {},
+                )
+                Text("${formatTime(engine.positionMs)}   ${formatTime(engine.durationMs)}", color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
+            }
+        }
+        if (adjust) {
+            Column(
+                Modifier.align(Alignment.CenterEnd).width(320.dp).fillMaxSize().background(Color(0xF014161C)).verticalScroll(rememberScrollState()).padding(18.dp),
+            ) {
+                Text("ADJUST", color = CreamDim, fontFamily = outfit, fontSize = 12.sp, letterSpacing = 1.6.sp)
+                Spacer(Modifier.height(12.dp))
+                LabeledSlider("Speed", engine.rate, 0.5f, 2f, outfit) { engine.setRate(it) }
+                LabeledSlider("Volume", engine.volume / 150f, 0f, 1f, outfit) { engine.setVolume((it * 150).toInt()) }
+                LabeledSlider("Brightness", engine.brightness, 0.4f, 1.8f, outfit) { engine.setPicture(it, engine.contrast, engine.saturation, engine.gamma) }
+                LabeledSlider("Contrast", engine.contrast, 0.4f, 1.8f, outfit) { engine.setPicture(engine.brightness, it, engine.saturation, engine.gamma) }
+                LabeledSlider("Saturation", engine.saturation, 0.2f, 2f, outfit) { engine.setPicture(engine.brightness, engine.contrast, it, engine.gamma) }
+                LabeledSlider("Gamma", engine.gamma, 0.4f, 1.8f, outfit) { engine.setPicture(engine.brightness, engine.contrast, engine.saturation, it) }
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuietChip("Fit", engine.fit == "fit", outfit) { engine.setFit("fit") }
+                    QuietChip("Fill", engine.fit == "fill", outfit) { engine.setFit("fill") }
+                    QuietChip("Stretch", engine.fit == "stretch", outfit) { engine.setFit("stretch") }
+                    QuietChip(if (engine.hw) "Hardware" else "Software", engine.hw, outfit) { engine.setHw(!engine.hw) }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Sound", color = Cream, fontFamily = outfit)
+                engine.audioTracks.forEach { track ->
+                    Text(track.description(), color = if (track.id() == engine.audioId) Tungsten else CreamDim, fontFamily = outfit, fontSize = 13.sp, modifier = Modifier.clickable { engine.setAudio(track.id()) }.padding(vertical = 4.dp))
+                }
+                Text("Subtitles", color = Cream, fontFamily = outfit, modifier = Modifier.padding(top = 8.dp))
+                engine.spuTracks.forEach { track ->
+                    Text(track.description(), color = if (track.id() == engine.spuId) Tungsten else CreamDim, fontFamily = outfit, fontSize = 13.sp, modifier = Modifier.clickable { engine.setSpu(track.id()) }.padding(vertical = 4.dp))
+                }
+                Text("Open a subtitle file", color = Tungsten, fontFamily = outfit, fontSize = 13.sp, modifier = Modifier.clickable {
+                    // The window reference is not here. Subtitle picking is handled by a file dialog without a parent.
+                    pick(null, false)?.firstOrNull()?.let(engine::addSubtitle)
+                }.padding(vertical = 6.dp))
+                if (engine.eqNames.isNotEmpty()) {
+                    Text("Equalizer", color = Cream, fontFamily = outfit, modifier = Modifier.padding(top = 8.dp))
+                    Text("Off", color = if (engine.eqName == null) Tungsten else CreamDim, fontFamily = outfit, fontSize = 13.sp, modifier = Modifier.clickable { engine.setEqualizer(null) }.padding(vertical = 3.dp))
+                    engine.eqNames.take(12).forEach { name ->
+                        Text(name, color = if (engine.eqName == name) Tungsten else CreamDim, fontFamily = outfit, fontSize = 13.sp, modifier = Modifier.clickable { engine.setEqualizer(name) }.padding(vertical = 3.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabeledSlider(label: String, value: Float, min: Float, max: Float, outfit: FontFamily, onChange: (Float) -> Unit) {
+    Text(label, color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
+    Slider(value = value.coerceIn(min, max), onValueChange = onChange, valueRange = min..max)
+}
+
+@Composable
+private fun QuietChip(label: String, on: Boolean, outfit: FontFamily, onClick: () -> Unit) {
+    Box(Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) Tungsten else InkRaised).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Text(label, color = if (on) Ink else Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+    }
+}
+
+private fun unfinished(item: Desk): Boolean {
+    return item.positionMs > 3_000 && (item.durationMs == 0L || item.positionMs < item.durationMs - 4_000)
+}
+
+private fun formatTime(ms: Long): String {
+    val safe = ms.coerceAtLeast(0) / 1000
+    val s = safe % 60
+    val m = (safe / 60) % 60
+    val h = safe / 3600
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+private fun pick(parent: java.awt.Frame?, multiple: Boolean): List<File>? {
+    val dialog = FileDialog(parent, "Open", FileDialog.LOAD)
+    dialog.isMultipleMode = multiple
+    dialog.isVisible = true
+    val files = if (multiple) dialog.files?.toList().orEmpty() else listOfNotNull(dialog.file?.let { File(dialog.directory, it) })
+    return files.filter { it.exists() }.ifEmpty { null }
+}

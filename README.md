@@ -1,20 +1,30 @@
 # Velo
 
-A quiet Android video player. The screen gets out of the way. The engine is [libVLC](https://code.videolan.org/videolan/vlc-android) 3.7, so it opens the same kinds of files VLC does, including MKV, and uses the phone’s hardware decoder when the device has one.
+A quiet video player for Android, Windows, and Mac. The screen gets out of the way. Playback uses [libVLC](https://code.videolan.org/videolan/vlc-android), so it opens the same kinds of files VLC does, including MKV.
 
-Files stay on the phone. Nothing is uploaded.
+Files stay on the device. Nothing is uploaded.
 
-## Install a test build
+## Android
 
 Open the latest Release and download `Velo.apk`. Open the file on an Android phone. Android will warn that the developer is unknown. That is expected for a test install.
 
-The first build is signed for sideloading, not for the Play Store.
+The build is signed for sideloading, not for the Play Store.
+
+## Windows and Mac
+
+The desktop build is the same player, not the Android app in a wrapper. The download includes VLC's engine.
+
+- [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-windows.exe)
+- [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-mac.dmg) for Apple silicon
+- [Velo-mac-intel.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-mac-intel.dmg) for Intel Macs
+
+On a Mac, if the system blocks the app, right-click Velo and choose Open. The first build is not notarized.
 
 ## While you watch
 
-- Tap to show the controls. They leave on their own.
-- Double-tap the sides to skip 10 seconds. Double-tap the middle to play or pause.
-- Hold for 2×. Swipe the left side for screen brightness, the right side for volume, or sideways to scrub.
-- Adjust is where picture, sound, subtitles, speed, chapters, A–B loop, and sleep live.
+- Tap or click to show the controls. They leave on their own.
+- Double-tap or double-click the sides to skip 10 seconds. The middle plays or pauses.
+- Hold for 2× on Android. On a computer, use the arrow keys: left and right seek, up and down change volume. F is fullscreen.
+- Adjust is where picture, sound, subtitles, speed, and the equalizer live.
 
-libVLC is LGPL-2.1. This project’s source is published so you can relink against it. See VideoLAN’s license for the library itself.
+The desktop build links [vlcj](https://github.com/caprica/vlcj) (GPL-3.0) and libVLC (LGPL-2.1). This repository is the corresponding source.

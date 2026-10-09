@@ -9,3 +9,8 @@
 captures/
 *.apk
 *.keystore
+
+/desktop/build/
+/desktop/.gradle/
+/desktop/vlc-bundle/**
+!/desktop/vlc-bundle/.gitkeep

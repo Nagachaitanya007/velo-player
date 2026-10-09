@@ -1,0 +1,127 @@
+name: Desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install WiX
+        shell: pwsh
+        run: |
+          choco install wixtoolset --no-progress -y
+          $candle = Get-ChildItem "C:\Program Files*\WiX Toolset*" -Recurse -Filter candle.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($candle) { echo $candle.DirectoryName >> $env:GITHUB_PATH }
+      - name: Bundle VLC
+        shell: pwsh
+        run: |
+          $zip = "$env:TEMP\vlc.zip"
+          Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.21/win64/vlc-3.0.21-win64.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:TEMP\vlc-src" -Force
+          $src = Get-ChildItem "$env:TEMP\vlc-src" -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path desktop\vlc-bundle | Out-Null
+          Copy-Item "$($src.FullName)\libvlc.dll" desktop\vlc-bundle\
+          Copy-Item "$($src.FullName)\libvlccore.dll" desktop\vlc-bundle\
+          Copy-Item "$($src.FullName)\plugins" desktop\vlc-bundle\plugins -Recurse
+      - name: Package exe
+        working-directory: desktop
+        run: ../gradlew.bat packageExe --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velo-windows
+          path: desktop/build/compose/binaries/main/**/*.exe
+          if-no-files-found: error
+
+  mac-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Bundle VLC
+        run: |
+          curl -L -o /tmp/vlc.dmg "https://download.videolan.org/pub/videolan/vlc/3.0.21/macosx/vlc-3.0.21-arm64.dmg"
+          hdiutil attach /tmp/vlc.dmg -nobrowse -mountpoint /tmp/vlc-mount
+          rm -rf desktop/vlc-bundle
+          mkdir -p desktop/vlc-bundle/lib desktop/vlc-bundle/plugins
+          cp /tmp/vlc-mount/VLC.app/Contents/MacOS/lib/libvlc*.dylib desktop/vlc-bundle/lib/
+          cp -R /tmp/vlc-mount/VLC.app/Contents/MacOS/plugins/. desktop/vlc-bundle/plugins/
+          hdiutil detach /tmp/vlc-mount
+          python3 desktop/scripts/mac-rpath.py desktop/vlc-bundle
+      - name: Package dmg
+        working-directory: desktop
+        run: ../gradlew packageDmg --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velo-mac
+          path: desktop/build/compose/binaries/main/**/*.dmg
+          if-no-files-found: error
+
+  mac-intel:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Bundle VLC
+        run: |
+          curl -L -o /tmp/vlc.dmg "https://download.videolan.org/pub/videolan/vlc/3.0.21/macosx/vlc-3.0.21-intel64.dmg"
+          hdiutil attach /tmp/vlc.dmg -nobrowse -mountpoint /tmp/vlc-mount
+          rm -rf desktop/vlc-bundle
+          mkdir -p desktop/vlc-bundle/lib desktop/vlc-bundle/plugins
+          cp /tmp/vlc-mount/VLC.app/Contents/MacOS/lib/libvlc*.dylib desktop/vlc-bundle/lib/
+          cp -R /tmp/vlc-mount/VLC.app/Contents/MacOS/plugins/. desktop/vlc-bundle/plugins/
+          hdiutil detach /tmp/vlc-mount
+          python3 desktop/scripts/mac-rpath.py desktop/vlc-bundle
+      - name: Package dmg
+        working-directory: desktop
+        run: ../gradlew packageDmg --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velo-mac-intel
+          path: desktop/build/compose/binaries/main/**/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: [windows, mac-arm, mac-intel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Rename
+        run: |
+          find velo-windows -name '*.exe' -exec cp {} Velo-windows.exe \;
+          find velo-mac -name '*.dmg' -exec cp {} Velo-mac.dmg \;
+          find velo-mac-intel -name '*.dmg' -exec cp {} Velo-mac-intel.dmg \;
+          ls -lh Velo-*
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v1.0.0 Velo-windows.exe Velo-mac.dmg Velo-mac-intel.dmg \
+            --repo Nagachaitanya007/velo-player \
+            --title "Velo 1.0.0 for Windows and Mac" \
+            --notes "$(cat <<'EOF'
+          Desktop builds of Velo.
+
+          - Velo-windows.exe is the Windows installer.
+          - Velo-mac.dmg is for Apple silicon.
+          - Velo-mac-intel.dmg is for Intel Macs.
+
+          On a Mac, if the system says the app cannot be opened, right-click Velo and choose Open. The first build is not notarized.
+
+          Files stay on the computer. Nothing is uploaded.
+          EOF
+          )"

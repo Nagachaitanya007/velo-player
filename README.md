@@ -16,7 +16,8 @@ The desktop build is the same player, not the Android app in a wrapper. The down
 
 - [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-windows.exe)
 - [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-mac.dmg) for Apple silicon
-- [Velo-mac-intel.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-mac-intel.dmg) for Intel Macs
+
+An Intel Mac build is not in this release. Apple silicon and Windows are.
 
 On a Mac, if the system blocks the app, right-click Velo and choose Open. The first build is not notarized.
 

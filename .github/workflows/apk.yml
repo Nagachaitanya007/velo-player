@@ -30,6 +30,7 @@ jobs:
           make_latest: true
           body: |
             Android test build of Velo.
+            The home screen lists videos already on the phone. Allow video access when Android asks. Browse files is still there if a file is missing from the list.
             Download Velo.apk and open it on your phone. Android warns about an unknown developer on test installs. That is expected.
             Playback uses libVLC. Files stay on the phone.
         env:

@@ -1,5 +1,8 @@
 package app.velo
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.sun.jna.Native
@@ -131,61 +134,61 @@ class Library {
 
 class Engine {
     val library = Library()
-    var failure: String? = null
+    var failure by mutableStateOf<String?>(null)
         private set
-    var recents: List<Desk> = library.read()
+    var recents by mutableStateOf(library.read())
         private set
-    var phase = "home"
+    var phase by mutableStateOf("home")
         private set
-    var title = ""
+    var title by mutableStateOf("")
         private set
-    var positionMs = 0L
+    var positionMs by mutableStateOf(0L)
         private set
-    var durationMs = 0L
+    var durationMs by mutableStateOf(0L)
         private set
-    var playing = false
+    var playing by mutableStateOf(false)
         private set
-    var opening = false
+    var opening by mutableStateOf(false)
         private set
-    var ended = false
+    var ended by mutableStateOf(false)
         private set
-    var playError: String? = null
+    var playError by mutableStateOf<String?>(null)
         private set
-    var volume = 100
+    var volume by mutableStateOf(100)
         private set
-    var rate = 1f
+    var rate by mutableStateOf(1f)
         private set
-    var brightness = 1f
+    var brightness by mutableStateOf(1f)
         private set
-    var contrast = 1f
+    var contrast by mutableStateOf(1f)
         private set
-    var saturation = 1f
+    var saturation by mutableStateOf(1f)
         private set
-    var gamma = 1f
+    var gamma by mutableStateOf(1f)
         private set
-    var fit = "fit"
+    var fit by mutableStateOf("fit")
         private set
-    var hw = true
+    var hw by mutableStateOf(true)
         private set
-    var audioTracks: List<TrackDescription> = emptyList()
+    var audioTracks by mutableStateOf<List<TrackDescription>>(emptyList())
         private set
-    var spuTracks: List<TrackDescription> = emptyList()
+    var spuTracks by mutableStateOf<List<TrackDescription>>(emptyList())
         private set
-    var audioId = -1
+    var audioId by mutableStateOf(-1)
         private set
-    var spuId = -1
+    var spuId by mutableStateOf(-1)
         private set
-    var audioDelayMs = 0L
+    var audioDelayMs by mutableStateOf(0L)
         private set
-    var spuDelayMs = 0L
+    var spuDelayMs by mutableStateOf(0L)
         private set
-    var eqNames: List<String> = emptyList()
+    var eqNames by mutableStateOf<List<String>>(emptyList())
         private set
-    var eqName: String? = null
+    var eqName by mutableStateOf<String?>(null)
         private set
-    var frame: ImageBitmap? = null
+    var frame by mutableStateOf<ImageBitmap?>(null)
         private set
-    var tick = 0
+    var tick by mutableStateOf(0)
         private set
 
     private var factory: MediaPlayerFactory? = null
@@ -315,6 +318,7 @@ class Engine {
         bump()
     }
 
+    @JvmName("applyVolume")
     fun setVolume(value: Int) {
         volume = value.coerceIn(0, 150)
         player?.audio()?.setVolume(volume)
@@ -322,6 +326,7 @@ class Engine {
         bump()
     }
 
+    @JvmName("applyRate")
     fun setRate(value: Float) {
         rate = value.coerceIn(0.5f, 2f)
         player?.controls()?.setRate(rate)
@@ -339,12 +344,14 @@ class Engine {
         bump()
     }
 
+    @JvmName("applyFit")
     fun setFit(mode: String) {
         fit = mode
         saveLook()
         bump()
     }
 
+    @JvmName("applyHw")
     fun setHw(enabled: Boolean) {
         hw = enabled
         saveLook()

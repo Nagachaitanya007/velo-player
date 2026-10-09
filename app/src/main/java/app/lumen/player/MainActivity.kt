@@ -1,9 +1,11 @@
 package app.lumen.player
 
+import android.Manifest
 import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
@@ -11,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Rational
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -32,8 +35,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import app.lumen.player.data.LibraryStore
+import app.lumen.player.data.PhoneVideo
+import app.lumen.player.data.VideoCatalog
 import app.lumen.player.playback.Phase
 import app.lumen.player.playback.PlayerEngine
 import app.lumen.player.playback.PlayerService
@@ -43,10 +49,14 @@ import app.lumen.player.ui.HomeScreen
 import app.lumen.player.ui.Ink
 import app.lumen.player.ui.VeloTheme
 import app.lumen.player.ui.PlayerScreen
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     private var engine by mutableStateOf<PlayerEngine?>(null)
     private var diskRecents by mutableStateOf<List<app.lumen.player.playback.RecentItem>>(emptyList())
+    private var phoneVideos by mutableStateOf<List<PhoneVideo>>(emptyList())
+    private var scanning by mutableStateOf(false)
+    private var canSeeVideos by mutableStateOf(false)
     private var unfinishedOnly by mutableStateOf(false)
     private var sortByName by mutableStateOf(false)
     private var inPip by mutableStateOf(false)
@@ -55,6 +65,7 @@ class MainActivity : ComponentActivity() {
     private var pending: ((PlayerEngine) -> Unit)? = null
     private var brightOrigin = -1f
     private var volumeOrigin = -1
+    private var scanToken = 0
     private val library by lazy { LibraryStore(this) }
 
     private val connection = object : ServiceConnection {
@@ -75,6 +86,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val askVideos = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        canSeeVideos = granted || hasVideoAccess()
+        if (canSeeVideos) scanVideos()
+    }
+
     private val openVideos = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (!uris.isNullOrEmpty()) launchOpen(uris)
     }
@@ -93,6 +109,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
         diskRecents = library.read()
+        canSeeVideos = hasVideoAccess()
+        if (canSeeVideos) scanVideos() else if (!app.lumen.player.data.Prefs(this).askedVideos) allowVideos()
         bindIfNeeded()
         setContent {
             VeloTheme {
@@ -102,10 +120,17 @@ class MainActivity : ComponentActivity() {
                         engine = current,
                         inPip = inPip,
                         diskRecents = diskRecents,
+                        videos = phoneVideos,
+                        scanning = scanning,
+                        canSeeVideos = canSeeVideos,
                         unfinishedOnly = unfinishedOnly,
                         sortByName = sortByName,
                         showHint = libraryHints(),
                         onOpen = { openVideos.launch(arrayOf("*/*")) },
+                        onAllow = ::allowVideos,
+                        onRefresh = ::scanVideos,
+                        onVideo = { video -> launchOpen(listOf(Uri.parse(video.uri))) },
+                        onVideoFromStart = { video -> launchOpen(listOf(Uri.parse(video.uri)), 0L) },
                         onRecent = { item -> openRecent(item, resume = true) },
                         onFromStart = { item -> openRecent(item, resume = false) },
                         onResumeLast = { item -> openRecent(item, resume = true) },
@@ -130,9 +155,16 @@ class MainActivity : ComponentActivity() {
                     ) {
                         HomeScreen(
                             recents = diskRecents,
+                            videos = phoneVideos,
+                            scanning = scanning,
+                            canSeeVideos = canSeeVideos,
                             unfinishedOnly = unfinishedOnly,
                             sortByName = sortByName,
                             onOpen = { openVideos.launch(arrayOf("*/*")) },
+                            onAllow = ::allowVideos,
+                            onRefresh = ::scanVideos,
+                            onVideo = { video -> launchOpen(listOf(Uri.parse(video.uri))) },
+                            onVideoFromStart = { video -> launchOpen(listOf(Uri.parse(video.uri)), 0L) },
                             onRecent = { item -> openRecent(item, resume = true) },
                             onFromStart = { item -> openRecent(item, resume = false) },
                             onResumeLast = { item -> openRecent(item, resume = true) },
@@ -152,6 +184,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         diskRecents = library.read()
+        canSeeVideos = hasVideoAccess()
+        if (canSeeVideos) scanVideos()
         bindIfNeeded()
     }
 
@@ -347,6 +381,52 @@ class MainActivity : ComponentActivity() {
         return next / max.toFloat()
     }
 
+    private fun allowVideos() {
+        if (hasVideoAccess()) {
+            canSeeVideos = true
+            scanVideos()
+            return
+        }
+        val prefs = app.lumen.player.data.Prefs(this)
+        val perm = videoPermission()
+        if (prefs.askedVideos && !shouldShowRequestPermissionRationale(perm)) {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
+            )
+            return
+        }
+        prefs.askedVideos = true
+        askVideos.launch(perm)
+    }
+
+    private fun videoPermission(): String {
+        return if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO
+        else Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    private fun hasVideoAccess(): Boolean {
+        return ContextCompat.checkSelfPermission(this, videoPermission()) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun scanVideos() {
+        if (!hasVideoAccess()) {
+            canSeeVideos = false
+            return
+        }
+        canSeeVideos = true
+        val token = ++scanToken
+        scanning = true
+        val appContext = applicationContext
+        thread(name = "velo-scan", isDaemon = true) {
+            val found = runCatching { VideoCatalog.scan(appContext) }.getOrDefault(emptyList())
+            runOnUiThread {
+                if (token != scanToken) return@runOnUiThread
+                phoneVideos = found
+                scanning = false
+            }
+        }
+    }
+
     private fun enterPip() {
         val state = engine?.state?.value ?: return
         if (state.phase != Phase.Player) return
@@ -367,10 +447,17 @@ private fun PlayingOrHome(
     engine: PlayerEngine,
     inPip: Boolean,
     diskRecents: List<RecentItem>,
+    videos: List<PhoneVideo>,
+    scanning: Boolean,
+    canSeeVideos: Boolean,
     unfinishedOnly: Boolean,
     sortByName: Boolean,
     showHint: Boolean,
     onOpen: () -> Unit,
+    onAllow: () -> Unit,
+    onRefresh: () -> Unit,
+    onVideo: (PhoneVideo) -> Unit,
+    onVideoFromStart: (PhoneVideo) -> Unit,
     onRecent: (RecentItem) -> Unit,
     onFromStart: (RecentItem) -> Unit,
     onResumeLast: (RecentItem) -> Unit,
@@ -414,9 +501,16 @@ private fun PlayingOrHome(
         ) {
             HomeScreen(
                 recents = ui.recents,
+                videos = videos,
+                scanning = scanning,
+                canSeeVideos = canSeeVideos,
                 unfinishedOnly = unfinishedOnly,
                 sortByName = sortByName,
                 onOpen = onOpen,
+                onAllow = onAllow,
+                onRefresh = onRefresh,
+                onVideo = onVideo,
+                onVideoFromStart = onVideoFromStart,
                 onRecent = onRecent,
                 onFromStart = onFromStart,
                 onResumeLast = onResumeLast,

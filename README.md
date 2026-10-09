@@ -2,6 +2,8 @@
 
 A quiet video player for Android, Windows, and Mac. The screen gets out of the way. Playback uses [libVLC](https://code.videolan.org/videolan/vlc-android), so it opens the same kinds of files VLC does, including MKV.
 
+The home screen lists videos already on the device. You tap or click one to play. Browse files is still there when a video lives somewhere the scan cannot see.
+
 Files stay on the device. Nothing is uploaded.
 
 ## Android

@@ -60,6 +60,10 @@ class Prefs(context: Context) {
     var hints: Boolean
         get() = sp.getBoolean("hints", true)
         set(v) { sp.edit().putBoolean("hints", v).apply() }
+
+    var askedVideos: Boolean
+        get() = sp.getBoolean("askedVideos", false)
+        set(v) { sp.edit().putBoolean("askedVideos", v).apply() }
 }
 
 class LibraryStore(context: Context) {

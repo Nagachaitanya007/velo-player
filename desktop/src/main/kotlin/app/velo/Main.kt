@@ -60,7 +60,15 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import java.awt.FileDialog
+import java.util.concurrent.atomic.AtomicInteger
+import javax.swing.SwingUtilities
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
@@ -75,6 +83,21 @@ private val Hairline = Color(0x22F3EFE6)
 fun main() = application {
     val engine = remember { Engine().also { it.start() } }
     DisposableEffect(engine) { onDispose { engine.release() } }
+    var clips by remember { mutableStateOf<List<DiskVideo>>(emptyList()) }
+    var scanning by remember { mutableStateOf(true) }
+    var scanRequest by remember { mutableStateOf(0) }
+    val scanGen = remember { AtomicInteger(0) }
+    LaunchedEffect(scanRequest) {
+        val mine = scanGen.incrementAndGet()
+        scanning = true
+        startScan({ scanGen.get() != mine }) { list, running ->
+            SwingUtilities.invokeLater {
+                if (scanGen.get() != mine) return@invokeLater
+                clips = list
+                scanning = running
+            }
+        }
+    }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
     var fullscreen by remember { mutableStateOf(false) }
     var adjust by remember { mutableStateOf(false) }
@@ -122,7 +145,7 @@ fun main() = application {
             if (engine.phase == "player") {
                 Stage(engine, outfit, adjust, { adjust = !adjust }, { engine.back() }, { fullscreen = !fullscreen })
             } else {
-                Home(engine, outfit, window)
+                Home(engine, outfit, window, clips, scanning) { scanRequest++ }
             }
         }
     }
@@ -142,84 +165,182 @@ private fun loadOutfit(): FontFamily {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Home(engine: Engine, outfit: FontFamily, window: java.awt.Frame) {
+private fun Home(
+    engine: Engine,
+    outfit: FontFamily,
+    window: java.awt.Frame,
+    clips: List<DiskVideo>,
+    scanning: Boolean,
+    onRefresh: () -> Unit,
+) {
     var armClear by remember { mutableStateOf(false) }
     var unfinishedOnly by remember { mutableStateOf(false) }
     var sortByName by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var librarySort by remember { mutableStateOf(0) }
     val recents = engine.recents
     val resume = recents.firstOrNull { unfinished(it) }
     val shown = recents
         .let { if (unfinishedOnly) it.filter { item -> unfinished(item) } else it }
         .let { if (sortByName) it.sortedBy { item -> item.file.name.lowercase() } else it }
+    val needle = query.trim()
+    val library = clips
+        .let { list ->
+            if (needle.isEmpty()) list
+            else list.filter {
+                it.file.name.contains(needle, true) || (it.file.parentFile?.name?.contains(needle, true) == true)
+            }
+        }
+        .let { list ->
+            when (librarySort) {
+                1 -> list.sortedBy { it.file.name.lowercase() }
+                2 -> list.sortedWith(compareBy({ it.file.parentFile?.name?.lowercase() ?: "" }, { it.file.name.lowercase() }))
+                else -> list.sortedByDescending { it.modified }
+            }
+        }
+    fun play(file: File, start: Long) = engine.open(file, start)
+    fun playKnown(file: File, fromStart: Boolean) {
+        val recent = engine.recents.firstOrNull { it.file.absolutePath == file.absolutePath }
+        val start = if (!fromStart && recent != null && unfinished(recent)) recent.positionMs else 0L
+        play(file, start)
+    }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 48.dp, vertical = 36.dp),
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 36.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(14.dp).clip(CircleShape).background(Tungsten))
-            Spacer(Modifier.width(10.dp))
-            Text("VELO", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, letterSpacing = 2.4.sp)
-        }
-        Spacer(Modifier.height(36.dp))
-        Text("Anything this computer\ncan decode.", color = Cream, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 42.sp, lineHeight = 46.sp)
-        Spacer(Modifier.height(12.dp))
-        Text(
-            engine.failure ?: "Open a video. Picture, sound, and subtitles stay out of the way until you ask.",
-            color = CreamDim,
-            fontFamily = outfit,
-            fontSize = 16.sp,
-        )
-        Spacer(Modifier.height(28.dp))
-        Box(
-            Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(16.dp)).background(Tungsten).clickable {
-                pick(window, true)?.let { files ->
-                    val first = files.first()
-                    val recent = engine.recents.firstOrNull { it.file.absolutePath == first.absolutePath }
-                    val start = if (recent != null && unfinished(recent)) recent.positionMs else 0L
-                    engine.open(first, start)
-                }
-            },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Open a video", color = Ink, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-        }
-        if (resume != null) {
-            Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(16.dp)).background(InkRaised)
-                    .clickable { engine.open(resume.file, resume.positionMs) }.padding(horizontal = 18.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text("Resume  ·  ${resume.file.name}", color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(14.dp).clip(CircleShape).background(Tungsten))
+                Spacer(Modifier.width(10.dp))
+                Text("VELO", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, letterSpacing = 2.4.sp)
             }
-        }
-        Spacer(Modifier.height(18.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (recents.isNotEmpty()) {
-                QuietChip("Unfinished", unfinishedOnly, outfit) { unfinishedOnly = !unfinishedOnly }
-                QuietChip(if (sortByName) "A–Z" else "Newest", sortByName, outfit) { sortByName = !sortByName }
-                QuietChip(if (armClear) "Erase the list" else "Clear history", armClear, outfit) {
-                    if (armClear) {
-                        armClear = false
-                        engine.clearHistory()
-                    } else armClear = true
+            Spacer(Modifier.height(36.dp))
+            Text("Anything this computer\ncan decode.", color = Cream, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 42.sp, lineHeight = 46.sp)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                engine.failure ?: "Videos already on this computer are listed here. Picture, sound, and subtitles stay out of the way until you ask.",
+                color = CreamDim,
+                fontFamily = outfit,
+                fontSize = 16.sp,
+            )
+            if (resume != null) {
+                Spacer(Modifier.height(28.dp))
+                Box(
+                    Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(16.dp)).background(Tungsten)
+                        .clickable { engine.open(resume.file, resume.positionMs) }.padding(horizontal = 18.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text("Resume  ·  ${resume.file.name}", color = Ink, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            QuietChip("Reset look", false, outfit) { engine.resetLook() }
+            Spacer(Modifier.height(18.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (recents.isNotEmpty()) {
+                    QuietChip("Unfinished", unfinishedOnly, outfit) { unfinishedOnly = !unfinishedOnly }
+                    QuietChip(if (sortByName) "A–Z" else "Newest", sortByName, outfit) { sortByName = !sortByName }
+                    QuietChip(if (armClear) "Erase the list" else "Clear history", armClear, outfit) {
+                        if (armClear) {
+                            armClear = false
+                            engine.clearHistory()
+                        } else armClear = true
+                    }
+                }
+                QuietChip("Reset look", false, outfit) { engine.resetLook() }
+                QuietChip("Browse files", false, outfit) {
+                    pick(window, true)?.let { files -> playKnown(files.first(), false) }
+                }
+            }
+            Spacer(Modifier.height(36.dp))
+            Text("ON THIS COMPUTER", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
+            Spacer(Modifier.height(12.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                textStyle = TextStyle(color = Cream, fontFamily = outfit, fontSize = 15.sp),
+                cursorBrush = SolidColor(Tungsten),
+                modifier = Modifier.fillMaxWidth(),
+                decorationBox = { inner ->
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(horizontal = 16.dp, vertical = 14.dp),
+                    ) {
+                        if (query.isEmpty()) Text("Search videos", color = CreamDim, fontFamily = outfit, fontSize = 15.sp)
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.height(12.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                QuietChip("Newest", librarySort == 0, outfit) { librarySort = 0 }
+                QuietChip("A–Z", librarySort == 1, outfit) { librarySort = 1 }
+                QuietChip("Folder", librarySort == 2, outfit) { librarySort = 2 }
+                QuietChip("Refresh", false, outfit, onRefresh)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                when {
+                    scanning && clips.isEmpty() -> "Looking through your folders…"
+                    needle.isNotEmpty() && library.isEmpty() -> "Nothing matches."
+                    clips.isEmpty() -> "No videos in the usual folders yet."
+                    scanning -> if (library.size == 1) "1 video, still looking…" else "${library.size} videos, still looking…"
+                    else -> if (library.size == 1) "1 video" else "${library.size} videos"
+                },
+                color = CreamDim,
+                fontFamily = outfit,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        items(library, key = { it.file.absolutePath }) { clip ->
+            val recent = recents.firstOrNull { it.file.absolutePath == clip.file.absolutePath }
+            DiskRow(
+                clip,
+                recent,
+                outfit,
+                onOpen = { playKnown(clip.file, false) },
+                onStart = { playKnown(clip.file, true) },
+            )
+            Spacer(Modifier.height(8.dp))
         }
         if (recents.isNotEmpty()) {
-            Spacer(Modifier.height(36.dp))
-            Text("CONTINUE", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
-            Spacer(Modifier.height(12.dp))
-            if (shown.isEmpty()) Text("Nothing unfinished.", color = CreamDim, fontFamily = outfit, fontSize = 14.sp)
-            shown.forEach { item ->
+            item {
+                Spacer(Modifier.height(28.dp))
+                Text("CONTINUE", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
+                Spacer(Modifier.height(12.dp))
+                if (shown.isEmpty()) Text("Nothing unfinished.", color = CreamDim, fontFamily = outfit, fontSize = 14.sp)
+            }
+            items(shown, key = { "recent-${it.file.absolutePath}" }) { item ->
                 RecentRow(item, outfit, { engine.open(item.file, if (unfinished(item)) item.positionMs else 0L) }, { engine.open(item.file, 0) }, { engine.forget(item.file.absolutePath) })
                 Spacer(Modifier.height(8.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun DiskRow(clip: DiskVideo, recent: Desk?, outfit: FontFamily, onOpen: () -> Unit, onStart: () -> Unit) {
+    val progress = if (recent != null && recent.durationMs > 0) (recent.positionMs.toFloat() / recent.durationMs).coerceIn(0f, 1f) else 0f
+    val folder = clip.file.parentFile?.name ?: "Computer"
+    val detail = buildString {
+        append(folder)
+        append("  ·  ")
+        append(formatSize(clip.size))
+    }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Column(Modifier.clickable(onClick = onOpen)) {
+            Text(clip.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(6.dp))
+            Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (progress > 0.02f && progress < 0.97f) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
+                    Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
     }
 }
 
@@ -399,6 +520,14 @@ private fun QuietChip(label: String, on: Boolean, outfit: FontFamily, onClick: (
 
 private fun unfinished(item: Desk): Boolean {
     return item.positionMs > 3_000 && (item.durationMs == 0L || item.positionMs < item.durationMs - 4_000)
+}
+
+private fun formatSize(bytes: Long): String {
+    val gb = bytes / 1_073_741_824.0
+    if (gb >= 1.0) return "%.1f GB".format(gb)
+    val mb = bytes / 1_048_576.0
+    if (mb >= 1.0) return "%.0f MB".format(mb)
+    return "${(bytes / 1024).coerceAtLeast(1)} KB"
 }
 
 private fun formatTime(ms: Long): String {

@@ -8,7 +8,7 @@ Files stay on the device. Nothing is uploaded.
 
 ## Android
 
-Open the latest Release and download `Velo.apk`. Open the file on an Android phone. Android will warn that the developer is unknown. That is expected for a test install.
+Open the latest Release and download `Velo.apk`. The 0.9.4 build is [Velo.apk](https://github.com/Nagachaitanya007/velo-player/releases/download/v0.9.4/Velo.apk). Open the file on an Android phone. Android will ask for video access so it can list what is already on the phone. It will also warn that the developer is unknown. That is expected for a test install.
 
 The build is signed for sideloading, not for the Play Store.
 
@@ -16,8 +16,8 @@ The build is signed for sideloading, not for the Play Store.
 
 The desktop build is the same player, not the Android app in a wrapper. The download includes VLC's engine.
 
-- [Velo-1.0.0.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-1.0.0.exe)
-- [Velo-1.0.0.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.0.0/Velo-1.0.0.dmg) for Apple silicon
+- [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.1.2/Velo-windows.exe)
+- [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.1.2/Velo-mac.dmg) for Apple silicon
 
 An Intel Mac build is not in this release. Apple silicon and Windows are.
 

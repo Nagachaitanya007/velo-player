@@ -309,6 +309,23 @@ class PlayerEngine(context: Context) {
         _state.update { it.copy(stopAtEnd = enabled, sleepUntil = null) }
     }
 
+    fun clearHistory() {
+        _state.update { it.copy(recents = library.clear()) }
+    }
+
+    fun forgetRecent(uri: String) {
+        _state.update { it.copy(recents = library.forget(uri)) }
+    }
+
+    fun resetLook() {
+        setEqOff()
+        setScale("fit")
+        setRotation(0)
+        setDeinterlace("off")
+        setSubtitleStyle(20, 0xFFFFFF)
+        commitPicture(1f, 1f, 1f, 1f)
+    }
+
     fun setHw(enabled: Boolean) {
         prefs.hw = enabled
         _state.update { it.copy(hw = enabled) }
@@ -444,7 +461,7 @@ class PlayerEngine(context: Context) {
                 it.copy(
                     opening = false,
                     playing = false,
-                    error = "Lumen couldn't read this file. Pick it again from Files.",
+                    error = "Velo couldn't read this file. Pick it again from Files.",
                 )
             }
         }

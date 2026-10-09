@@ -41,12 +41,14 @@ import app.lumen.player.playback.QueueItem
 import app.lumen.player.playback.RecentItem
 import app.lumen.player.ui.HomeScreen
 import app.lumen.player.ui.Ink
-import app.lumen.player.ui.LumenTheme
+import app.lumen.player.ui.VeloTheme
 import app.lumen.player.ui.PlayerScreen
 
 class MainActivity : ComponentActivity() {
     private var engine by mutableStateOf<PlayerEngine?>(null)
     private var diskRecents by mutableStateOf<List<app.lumen.player.playback.RecentItem>>(emptyList())
+    private var unfinishedOnly by mutableStateOf(false)
+    private var sortByName by mutableStateOf(false)
     private var inPip by mutableStateOf(false)
     private var bound = false
     private var binding = false
@@ -93,21 +95,25 @@ class MainActivity : ComponentActivity() {
         diskRecents = library.read()
         bindIfNeeded()
         setContent {
-            LumenTheme {
+            VeloTheme {
                 val current = engine
                 if (current != null) {
                     PlayingOrHome(
                         engine = current,
                         inPip = inPip,
                         diskRecents = diskRecents,
+                        unfinishedOnly = unfinishedOnly,
+                        sortByName = sortByName,
                         showHint = libraryHints(),
                         onOpen = { openVideos.launch(arrayOf("*/*")) },
-                        onRecent = { item ->
-                            val resume = if (item.positionMs > 3_000 && (item.durationMs == 0L || item.positionMs < item.durationMs - 4_000)) {
-                                item.positionMs
-                            } else 0L
-                            launchOpen(listOf(Uri.parse(item.uri)), resume)
-                        },
+                        onRecent = { item -> openRecent(item, resume = true) },
+                        onFromStart = { item -> openRecent(item, resume = false) },
+                        onResumeLast = { item -> openRecent(item, resume = true) },
+                        onForget = ::forgetRecent,
+                        onClear = ::clearHistory,
+                        onToggleUnfinished = { unfinishedOnly = !unfinishedOnly },
+                        onToggleSort = { sortByName = !sortByName },
+                        onResetLook = ::resetLook,
                         onBack = { current.closeToLibrary() },
                         onPickSub = { openSub.launch(arrayOf("*/*")) },
                         onBrightness = ::gestureBrightness,
@@ -124,13 +130,17 @@ class MainActivity : ComponentActivity() {
                     ) {
                         HomeScreen(
                             recents = diskRecents,
+                            unfinishedOnly = unfinishedOnly,
+                            sortByName = sortByName,
                             onOpen = { openVideos.launch(arrayOf("*/*")) },
-                            onRecent = { item ->
-                                val resume = if (item.positionMs > 3_000 && (item.durationMs == 0L || item.positionMs < item.durationMs - 4_000)) {
-                                    item.positionMs
-                                } else 0L
-                                launchOpen(listOf(Uri.parse(item.uri)), resume)
-                            },
+                            onRecent = { item -> openRecent(item, resume = true) },
+                            onFromStart = { item -> openRecent(item, resume = false) },
+                            onResumeLast = { item -> openRecent(item, resume = true) },
+                            onForget = ::forgetRecent,
+                            onClear = ::clearHistory,
+                            onToggleUnfinished = { unfinishedOnly = !unfinishedOnly },
+                            onToggleSort = { sortByName = !sortByName },
+                            onResetLook = ::resetLook,
                         )
                     }
                 }
@@ -195,6 +205,51 @@ class MainActivity : ComponentActivity() {
             stopService(Intent(this, PlayerService::class.java))
         }
         super.onDestroy()
+    }
+
+    private fun openRecent(item: RecentItem, resume: Boolean) {
+        val start = if (
+            resume &&
+            item.positionMs > 3_000 &&
+            (item.durationMs == 0L || item.positionMs < item.durationMs - 4_000)
+        ) item.positionMs else 0L
+        launchOpen(listOf(Uri.parse(item.uri)), start)
+    }
+
+    private fun forgetRecent(item: RecentItem) {
+        val ready = engine
+        diskRecents = if (ready != null) {
+            ready.forgetRecent(item.uri)
+            ready.state.value.recents
+        } else {
+            library.forget(item.uri)
+        }
+    }
+
+    private fun clearHistory() {
+        val ready = engine
+        if (ready != null) ready.clearHistory()
+        else library.clear()
+        diskRecents = emptyList()
+    }
+
+    private fun resetLook() {
+        val ready = engine
+        if (ready != null) {
+            ready.resetLook()
+            return
+        }
+        val prefs = app.lumen.player.data.Prefs(this)
+        prefs.brightness = 1f
+        prefs.contrast = 1f
+        prefs.saturation = 1f
+        prefs.gamma = 1f
+        prefs.rotation = 0
+        prefs.deinterlace = "off"
+        prefs.scaleName = "fit"
+        prefs.subSize = 20
+        prefs.subColor = 0xFFFFFF
+        prefs.eqPreset = -1
     }
 
     private fun libraryHints(): Boolean = app.lumen.player.data.Prefs(this).hints
@@ -312,9 +367,18 @@ private fun PlayingOrHome(
     engine: PlayerEngine,
     inPip: Boolean,
     diskRecents: List<RecentItem>,
+    unfinishedOnly: Boolean,
+    sortByName: Boolean,
     showHint: Boolean,
     onOpen: () -> Unit,
     onRecent: (RecentItem) -> Unit,
+    onFromStart: (RecentItem) -> Unit,
+    onResumeLast: (RecentItem) -> Unit,
+    onForget: (RecentItem) -> Unit,
+    onClear: () -> Unit,
+    onToggleUnfinished: () -> Unit,
+    onToggleSort: () -> Unit,
+    onResetLook: () -> Unit,
     onBack: () -> Unit,
     onPickSub: () -> Unit,
     onBrightness: (Int, Float, Float) -> Float,
@@ -348,7 +412,20 @@ private fun PlayingOrHome(
                 .background(Ink)
                 .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            HomeScreen(recents = ui.recents.ifEmpty { diskRecents }, onOpen = onOpen, onRecent = onRecent)
+            HomeScreen(
+                recents = ui.recents,
+                unfinishedOnly = unfinishedOnly,
+                sortByName = sortByName,
+                onOpen = onOpen,
+                onRecent = onRecent,
+                onFromStart = onFromStart,
+                onResumeLast = onResumeLast,
+                onForget = onForget,
+                onClear = onClear,
+                onToggleUnfinished = onToggleUnfinished,
+                onToggleSort = onToggleSort,
+                onResetLook = onResetLook,
+            )
         }
     }
 }

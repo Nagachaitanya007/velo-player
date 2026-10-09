@@ -21,16 +21,16 @@ jobs:
       - name: Build
         run: chmod +x ./gradlew && ./gradlew :app:assembleDebug --no-daemon --stacktrace
       - name: Collect APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Lumen.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Velo.apk
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.9.${{ github.run_number }}
-          name: Lumen ${{ github.run_number }}
-          files: Lumen.apk
+          name: Velo ${{ github.run_number }}
+          files: Velo.apk
           make_latest: true
           body: |
-            Android test build of Lumen.
-            Download Lumen.apk and open it on your phone. Android warns about an unknown developer on test installs. That is expected.
+            Android test build of Velo.
+            Download Velo.apk and open it on your phone. Android warns about an unknown developer on test installs. That is expected.
             Playback uses libVLC. Files stay on the phone.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

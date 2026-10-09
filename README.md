@@ -1,4 +1,4 @@
-# Lumen
+# Velo
 
 A quiet Android video player. The screen gets out of the way. The engine is [libVLC](https://code.videolan.org/videolan/vlc-android) 3.7, so it opens the same kinds of files VLC does, including MKV, and uses the phone’s hardware decoder when the device has one.
 
@@ -6,7 +6,7 @@ Files stay on the phone. Nothing is uploaded.
 
 ## Install a test build
 
-Open the latest Release and download `Lumen.apk` (or `Lumen-test.apk`). Open the file on an Android phone. Android will warn that the developer is unknown. That is expected for a test install.
+Open the latest Release and download `Velo.apk`. Open the file on an Android phone. Android will warn that the developer is unknown. That is expected for a test install.
 
 The first build is signed for sideloading, not for the Play Store.
 

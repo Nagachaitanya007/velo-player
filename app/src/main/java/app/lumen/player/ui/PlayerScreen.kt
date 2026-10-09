@@ -315,7 +315,7 @@ fun PlayerScreen(
                     IconButton(Icons.Rounded.ArrowBack, "Back", onBack)
                     Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                         Text(
-                            state.title.ifBlank { "Lumen" },
+                            state.title.ifBlank { "Velo" },
                             color = Cream,
                             fontFamily = Outfit,
                             fontWeight = FontWeight(620),

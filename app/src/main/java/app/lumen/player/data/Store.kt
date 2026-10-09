@@ -90,8 +90,24 @@ class LibraryStore(context: Context) {
     fun remember(item: RecentItem): List<RecentItem> = synchronized(lock) {
         val next = listOf(item) + read().filter { it.uri != item.uri }
         val trimmed = next.take(40)
+        write(trimmed)
+        trimmed
+    }
+
+    fun forget(uri: String): List<RecentItem> = synchronized(lock) {
+        val next = read().filter { it.uri != uri }
+        write(next)
+        next
+    }
+
+    fun clear(): List<RecentItem> = synchronized(lock) {
+        write(emptyList())
+        emptyList()
+    }
+
+    private fun write(items: List<RecentItem>) {
         val arr = JSONArray()
-        trimmed.forEach { recent ->
+        items.forEach { recent ->
             arr.put(
                 JSONObject()
                     .put("uri", recent.uri)
@@ -102,6 +118,5 @@ class LibraryStore(context: Context) {
             )
         }
         file.writeText(arr.toString())
-        trimmed
     }
 }

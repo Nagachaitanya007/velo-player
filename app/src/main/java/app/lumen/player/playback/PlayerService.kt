@@ -52,7 +52,7 @@ class PlayerService : Service() {
         super.onCreate()
         engine = PlayerEngine(this)
         createChannel()
-        session = MediaSessionCompat(this, "Lumen").apply {
+        session = MediaSessionCompat(this, "Velo").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() = engine.play()
                 override fun onPause() = engine.pause()
@@ -95,7 +95,7 @@ class PlayerService : Service() {
             }
         }
         val state = engine.state.value
-        val shown = if (state.title.isBlank()) state.copy(title = "Lumen") else state
+        val shown = if (state.title.isBlank()) state.copy(title = "Velo") else state
         runCatching { goForeground(shown) }
         inForeground = true
         return START_NOT_STICKY
@@ -151,7 +151,7 @@ class PlayerService : Service() {
         val playLabel = if (state.playing) "Pause" else "Play"
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle(state.title.ifBlank { "Lumen" })
+            .setContentTitle(state.title.ifBlank { "Velo" })
             .setContentText(if (state.playing) "Playing" else "Paused")
             .setContentIntent(open)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -206,7 +206,7 @@ class PlayerService : Service() {
     private fun createChannel() {
         val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(CHANNEL, "Playback", NotificationManager.IMPORTANCE_LOW)
-        channel.description = "Shows what Lumen is playing"
+        channel.description = "Shows what Velo is playing"
         manager.createNotificationChannel(channel)
     }
 

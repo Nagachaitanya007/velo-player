@@ -56,7 +56,7 @@ private val Colors = darkColorScheme(
 )
 
 @Composable
-fun LumenTheme(content: @Composable () -> Unit) {
+fun VeloTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = Colors, typography = Type, content = content)
 }
 

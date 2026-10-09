@@ -1,6 +1,7 @@
 package app.lumen.player.playback
 
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +35,9 @@ class PlayerEngine(context: Context) {
     private var attached = false
     private var pendingSeek = 0L
     private var expectStop = false
+    private var startWhenAttached = false
+    private var softwareRetry = false
+    private var source: AssetFileDescriptor? = null
     private var subtitleUri: Uri? = null
     private var chosenAudio: Int? = null
     private var chosenSpu: Int? = null
@@ -82,6 +86,10 @@ class PlayerEngine(context: Context) {
         player.attachViews(layout, null, false, true)
         attached = true
         applyScale()
+        if (startWhenAttached) {
+            startWhenAttached = false
+            playCurrent()
+        }
     }
 
     fun detach() {
@@ -120,7 +128,8 @@ class PlayerEngine(context: Context) {
             )
         }
         pendingSeek = startMs
-        playCurrent()
+        softwareRetry = false
+        beginPlayback()
     }
 
     fun retry() {
@@ -129,14 +138,16 @@ class PlayerEngine(context: Context) {
         pendingSeek = s.positionMs
         expectStop = true
         runCatching { player.stop() }
+        softwareRetry = false
         _state.update { it.copy(error = null, opening = true, ended = false) }
-        playCurrent()
+        beginPlayback()
     }
 
     fun closeToLibrary() {
         rememberProgress()
         expectStop = true
         runCatching { player.stop() }
+        closeSource()
         clearSleep()
         _state.update {
             it.copy(
@@ -396,24 +407,69 @@ class PlayerEngine(context: Context) {
         clearSleep()
         rememberProgress()
         detach()
+        closeSource()
         runCatching { player.release() }
         runCatching { lib.release() }
+    }
+
+    private fun beginPlayback() {
+        if (attached) {
+            startWhenAttached = false
+            playCurrent()
+        } else {
+            startWhenAttached = true
+        }
     }
 
     private fun playCurrent() {
         val s = _state.value
         val item = s.queue.getOrNull(s.queueIndex) ?: return
         val uri = Uri.parse(item.uri)
-        val media = Media(lib, uri)
-        media.setHWDecoderEnabled(s.hw, false)
-        media.addOption(":audio-time-stretch")
-        decorate(media, s)
-        player.media = media
-        media.release()
-        player.play()
-        _state.update {
-            it.copy(title = item.title, uri = item.uri, opening = true, error = null)
+        try {
+            expectStop = true
+            if (player.hasMedia()) runCatching { player.stop() }
+            val media = openMedia(uri)
+            if (softwareRetry || !s.hw) media.setHWDecoderEnabled(false, false)
+            else media.setHWDecoderEnabled(true, false)
+            decorate(media, s)
+            player.media = media
+            media.release()
+            player.play()
+            _state.update {
+                it.copy(title = item.title, uri = item.uri, opening = true, error = null)
+            }
+        } catch (_: Throwable) {
+            closeSource()
+            _state.update {
+                it.copy(
+                    opening = false,
+                    playing = false,
+                    error = "Lumen couldn't read this file. Pick it again from Files.",
+                )
+            }
         }
+    }
+
+    private fun openMedia(uri: Uri): Media {
+        val descriptor = runCatching { app.contentResolver.openAssetFileDescriptor(uri, "r") }.getOrNull()
+        if (descriptor != null) {
+            val previous = source
+            source = descriptor
+            val media = if (descriptor.startOffset > 0L && descriptor.length > 0L) {
+                Media(lib, descriptor)
+            } else {
+                Media(lib, descriptor.fileDescriptor)
+            }
+            main.post { runCatching { previous?.close() } }
+            return media
+        }
+        return Media(lib, uri)
+    }
+
+    private fun closeSource() {
+        val current = source
+        source = null
+        runCatching { current?.close() }
     }
 
     private fun reload() {
@@ -474,12 +530,21 @@ class PlayerEngine(context: Context) {
             MediaPlayer.Event.EndReached -> if (!expectStop) onEnded()
             MediaPlayer.Event.EncounteredError -> {
                 expectStop = false
-                _state.update {
-                    it.copy(
-                        opening = false,
-                        playing = false,
-                        error = "This file didn't open. The phone may not be able to read it.",
-                    )
+                if (!softwareRetry && _state.value.hw) {
+                    softwareRetry = true
+                    main.post {
+                        pendingSeek = _state.value.positionMs.coerceAtLeast(pendingSeek)
+                        beginPlayback()
+                    }
+                } else {
+                    softwareRetry = false
+                    _state.update {
+                        it.copy(
+                            opening = false,
+                            playing = false,
+                            error = "This file didn't open. Pick it once more from Files. If it still fails, it isn't a video this phone can decode.",
+                        )
+                    }
                 }
             }
             MediaPlayer.Event.TimeChanged -> {

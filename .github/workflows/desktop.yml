@@ -82,19 +82,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v1.1.${{ github.run_number }}" Velo-windows.exe Velo-mac.dmg \
+          gh release create "v1.2.0" Velo-windows.exe Velo-mac.dmg \
             --repo Nagachaitanya007/velo-player \
-            --title "Velo 1.1.${{ github.run_number }} for Windows and Mac" \
+            --title "Velo 1.2.0" \
             --notes "$(cat <<'EOF'
-          Desktop builds of Velo.
+          Velo 1.2.0. Video cards on the home screen show a thumbnail, on the phone and on the computer.
 
           - Velo-windows.exe is the Windows installer.
           - Velo-mac.dmg is for Apple silicon.
+          - Velo.apk is the Android build, added to this release.
 
-          This build lists videos it finds on the computer, so you can pick one without opening a file window. Browse files is still there for anything the scan missed.
+          On a Mac, if the system says the app cannot be opened, right-click Velo and choose Open.
 
-          On a Mac, if the system says the app cannot be opened, right-click Velo and choose Open. The first build is not notarized.
-
-          Files stay on the computer. Nothing is uploaded.
+          Files stay on the device. Nothing is uploaded.
           EOF
           )"

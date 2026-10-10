@@ -2,13 +2,13 @@
 
 A quiet video player for Android, Windows, and Mac. The screen gets out of the way. Playback uses [libVLC](https://code.videolan.org/videolan/vlc-android), so it opens the same kinds of files VLC does, including MKV.
 
-The home screen lists videos already on the device. You tap or click one to play. Browse files is still there when a video lives somewhere the scan cannot see.
+The home screen lists videos already on the device, with a thumbnail on each card. You tap or click one to play. Browse files is still there when a video lives somewhere the scan cannot see.
 
 Files stay on the device. Nothing is uploaded.
 
 ## Android
 
-Open the latest Release and download `Velo.apk`. The 0.9.4 build is [Velo.apk](https://github.com/Nagachaitanya007/velo-player/releases/download/v0.9.4/Velo.apk). Open the file on an Android phone. Android will ask for video access so it can list what is already on the phone. It will also warn that the developer is unknown. That is expected for a test install.
+Open the latest Release and download `Velo.apk`. The 1.2.0 build is [Velo.apk](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.2.0/Velo.apk). Open the file on an Android phone. Android will ask for video access so it can list what is already on the phone. It will also warn that the developer is unknown. That is expected for a test install.
 
 The build is signed for sideloading, not for the Play Store.
 
@@ -16,8 +16,8 @@ The build is signed for sideloading, not for the Play Store.
 
 The desktop build is the same player, not the Android app in a wrapper. The download includes VLC's engine.
 
-- [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.1.2/Velo-windows.exe)
-- [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.1.2/Velo-mac.dmg) for Apple silicon
+- [Velo-windows.exe](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.2.0/Velo-windows.exe)
+- [Velo-mac.dmg](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.2.0/Velo-mac.dmg) for Apple silicon
 
 An Intel Mac build is not in this release. Apple silicon and Windows are.
 

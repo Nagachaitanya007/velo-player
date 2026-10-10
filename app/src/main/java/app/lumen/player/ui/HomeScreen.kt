@@ -1,5 +1,6 @@
 package app.lumen.player.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.lumen.player.data.PhoneVideo
 import app.lumen.player.playback.RecentItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private val PosterWash = Color(0xFF101218)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -322,35 +333,22 @@ private fun VideoRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(InkRaised)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .background(InkRaised),
     ) {
-        Column(modifier = Modifier.clickable { onVideo(video) }) {
-            Text(
-                video.title,
-                color = Cream,
-                fontFamily = Outfit,
-                fontWeight = FontWeight(520),
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                detail,
-                color = CreamDim,
-                fontFamily = Outfit,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .background(PosterWash)
+                .clickable { onVideo(video) },
+        ) {
+            Thumb(video.uri, Modifier.fillMaxSize())
             if (progress > 0.02f && progress < 0.97f) {
-                Spacer(Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
+                        .align(Alignment.BottomStart)
                         .fillMaxWidth()
                         .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
                         .background(Hairline),
                 ) {
                     Box(
@@ -362,15 +360,36 @@ private fun VideoRow(
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "From start",
-            color = Tungsten,
-            fontFamily = Outfit,
-            fontWeight = FontWeight(520),
-            fontSize = 13.sp,
-            modifier = Modifier.clickable { onFromStart(video) },
-        )
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                video.title,
+                color = Cream,
+                fontFamily = Outfit,
+                fontWeight = FontWeight(520),
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { onVideo(video) },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                detail,
+                color = CreamDim,
+                fontFamily = Outfit,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "From start",
+                color = Tungsten,
+                fontFamily = Outfit,
+                fontWeight = FontWeight(520),
+                fontSize = 13.sp,
+                modifier = Modifier.clickable { onFromStart(video) },
+            )
+        }
     }
 }
 
@@ -394,36 +413,46 @@ private fun RecentRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(InkRaised)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(10.dp),
     ) {
-        Column(modifier = Modifier.clickable { onRecent(item) }) {
-            Text(
-                item.title,
-                color = Cream,
-                fontFamily = Outfit,
-                fontWeight = FontWeight(520),
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Thumb(
+                item.uri,
+                Modifier
+                    .size(112.dp, 64.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onRecent(item) },
             )
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Hairline),
-                ) {
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f).clickable { onRecent(item) }) {
+                Text(
+                    item.title,
+                    color = Cream,
+                    fontFamily = Outfit,
+                    fontWeight = FontWeight(520),
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress)
+                            .weight(1f)
                             .height(3.dp)
-                            .background(Tungsten),
-                    )
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Hairline),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(progress)
+                                .height(3.dp)
+                                .background(Tungsten),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(detail, color = CreamDim, fontFamily = Outfit, fontSize = 12.sp)
                 }
-                Spacer(Modifier.width(12.dp))
-                Text(detail, color = CreamDim, fontFamily = Outfit, fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -444,6 +473,29 @@ private fun RecentRow(
                 fontWeight = FontWeight(520),
                 fontSize = 13.sp,
                 modifier = Modifier.clickable { onForget(item) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun Thumb(uri: String, modifier: Modifier) {
+    val context = LocalContext.current
+    var image by remember(uri) { mutableStateOf<ImageBitmap?>(VideoThumbs.peek(uri)) }
+    LaunchedEffect(uri) {
+        if (image != null) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching { VideoThumbs.load(context, android.net.Uri.parse(uri)) }.getOrNull()
+        }
+        if (loaded != null) image = loaded
+    }
+    Box(modifier.background(PosterWash)) {
+        image?.let {
+            Image(
+                bitmap = it,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
             )
         }
     }

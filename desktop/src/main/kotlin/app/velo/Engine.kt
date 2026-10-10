@@ -267,6 +267,7 @@ class Engine {
             })
             media.audio().setVolume(volume)
             if (!eqName.isNullOrBlank()) setEqualizer(eqName)
+            Posters.bind(created)
         } catch (_: Throwable) {
             failure = "Velo couldn't start the video engine."
         }
@@ -446,6 +447,7 @@ class Engine {
 
     fun release() {
         remember()
+        Posters.shutdown()
         runCatching { player?.release() }
         runCatching { factory?.release() }
         runCatching { held?.close() }

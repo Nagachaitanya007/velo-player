@@ -2,6 +2,7 @@
 
 package app.velo
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,6 +52,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +69,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import kotlinx.coroutines.Job
 import java.awt.FileDialog
 import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.SwingUtilities
@@ -327,20 +331,22 @@ private fun DiskRow(clip: DiskVideo, recent: Desk?, outfit: FontFamily, onOpen: 
         append("  ·  ")
         append(formatSize(clip.size))
     }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(horizontal = 16.dp, vertical = 14.dp)) {
-        Column(Modifier.clickable(onClick = onOpen)) {
-            Text(clip.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(6.dp))
-            Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF101218)).clickable(onClick = onOpen)) {
+            Poster(clip.file, Modifier.fillMaxSize())
             if (progress > 0.02f && progress < 0.97f) {
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Hairline)) {
                     Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(clip.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(onClick = onOpen))
+            Spacer(Modifier.height(6.dp))
+            Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp))
+            Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
+        }
     }
 }
 
@@ -353,16 +359,20 @@ private fun RecentRow(item: Desk, outfit: FontFamily, onOpen: () -> Unit, onStar
         progress > 0.97f -> "Finished"
         else -> "${formatTime((item.durationMs - item.positionMs).coerceAtLeast(0))} left"
     }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(horizontal = 16.dp, vertical = 14.dp)) {
-        Column(Modifier.clickable(onClick = onOpen)) {
-            Text(item.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
-                    Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Poster(item.file, Modifier.size(112.dp, 64.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpen))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
+                Text(item.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
+                        Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
                 }
-                Spacer(Modifier.width(12.dp))
-                Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -370,6 +380,25 @@ private fun RecentRow(item: Desk, outfit: FontFamily, onOpen: () -> Unit, onStar
             Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
             Spacer(Modifier.width(18.dp))
             Text("Remove", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onForget))
+        }
+    }
+}
+
+@Composable
+private fun Poster(file: File, modifier: Modifier) {
+    var image by remember(file.absolutePath, file.length(), file.lastModified()) { mutableStateOf(Posters.peek(file)) }
+    LaunchedEffect(file.absolutePath, file.length(), file.lastModified()) {
+        if (image != null) return@LaunchedEffect
+        val job = coroutineContext[Job]
+        Posters.want(file) { bmp ->
+            SwingUtilities.invokeLater {
+                if (job?.isActive != false) image = bmp
+            }
+        }
+    }
+    Box(modifier.background(Color(0xFF101218))) {
+        image?.let {
+            Image(bitmap = it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
     }
 }

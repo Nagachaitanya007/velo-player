@@ -64,8 +64,11 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -182,38 +185,61 @@ private fun Home(
     var sortByName by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var librarySort by remember { mutableStateOf(0) }
+    var asGrid by remember { mutableStateOf(false) }
+    var stack by remember { mutableStateOf(listOf<String>()) }
     val recents = engine.recents
     val resume = recents.firstOrNull { unfinished(it) }
     val shown = recents
         .let { if (unfinishedOnly) it.filter { item -> unfinished(item) } else it }
         .let { if (sortByName) it.sortedBy { item -> item.file.name.lowercase() } else it }
     val needle = query.trim()
-    val library = clips
-        .let { list ->
-            if (needle.isEmpty()) list
-            else list.filter {
-                it.file.name.contains(needle, true) || (it.file.parentFile?.name?.contains(needle, true) == true)
+    val searching = needle.isNotEmpty()
+    LaunchedEffect(clips, stack) {
+        val prefix = stack.joinToString("/")
+        val alive = prefix.isEmpty() || clips.any { inFolder(libraryDir(it.file), prefix) }
+        if (!alive) stack = emptyList()
+    }
+    val opened = if (searching) emptyList() else stack
+    val shelves = if (searching) emptyList() else foldersHere(clips, opened)
+    val loose = sortClips(
+        if (searching) {
+            clips.filter {
+                it.file.name.contains(needle, true) || libraryDir(it.file).contains(needle, true)
             }
-        }
-        .let { list ->
-            when (librarySort) {
-                1 -> list.sortedBy { it.file.name.lowercase() }
-                2 -> list.sortedWith(compareBy({ it.file.parentFile?.name?.lowercase() ?: "" }, { it.file.name.lowercase() }))
-                else -> list.sortedByDescending { it.modified }
-            }
-        }
+        } else {
+            clipsHere(clips, opened)
+        },
+        librarySort,
+    )
     fun play(file: File, start: Long) = engine.open(file, start)
     fun playKnown(file: File, fromStart: Boolean) {
         val recent = engine.recents.firstOrNull { it.file.absolutePath == file.absolutePath }
         val start = if (!fromStart && recent != null && unfinished(recent)) recent.positionMs else 0L
         play(file, start)
     }
+    val libraryLabel = when {
+        scanning && clips.isEmpty() -> "Looking through your folders…"
+        searching && loose.isEmpty() -> "Nothing matches."
+        clips.isEmpty() -> "No videos in the usual folders yet."
+        searching -> countLine(loose.size, 0)
+        scanning -> countLine(loose.size, shelves.size) + ", still looking…"
+        else -> countLine(loose.size, shelves.size)
+    }
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 36.dp),
-    ) {
-        item {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = if (!asGrid) 1 else when {
+            maxWidth >= 1100.dp -> 4
+            maxWidth >= 760.dp -> 3
+            else -> 2
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 36.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(14.dp).clip(CircleShape).background(Tungsten))
                 Spacer(Modifier.width(10.dp))
@@ -256,7 +282,15 @@ private fun Home(
                 }
             }
             Spacer(Modifier.height(36.dp))
-            Text("ON THIS COMPUTER", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!searching && opened.isNotEmpty()) {
+                    Text("Back", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { stack = stack.dropLast(1) })
+                    Spacer(Modifier.width(14.dp))
+                    Text(opened.last(), color = Cream, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Text(if (searching) "SEARCH" else "ON THIS COMPUTER", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
+                }
+            }
             Spacer(Modifier.height(12.dp))
             BasicTextField(
                 value = query,
@@ -278,75 +312,97 @@ private fun Home(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 QuietChip("Newest", librarySort == 0, outfit) { librarySort = 0 }
                 QuietChip("A–Z", librarySort == 1, outfit) { librarySort = 1 }
-                QuietChip("Folder", librarySort == 2, outfit) { librarySort = 2 }
+                QuietChip(if (asGrid) "Grid" else "Rows", asGrid, outfit) { asGrid = !asGrid }
                 QuietChip("Refresh", false, outfit, onRefresh)
             }
             Spacer(Modifier.height(12.dp))
-            Text(
-                when {
-                    scanning && clips.isEmpty() -> "Looking through your folders…"
-                    needle.isNotEmpty() && library.isEmpty() -> "Nothing matches."
-                    clips.isEmpty() -> "No videos in the usual folders yet."
-                    scanning -> if (library.size == 1) "1 video, still looking…" else "${library.size} videos, still looking…"
-                    else -> if (library.size == 1) "1 video" else "${library.size} videos"
-                },
-                color = CreamDim,
-                fontFamily = outfit,
-                fontSize = 13.sp,
-            )
+            Text(libraryLabel, color = CreamDim, fontFamily = outfit, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
         }
-        items(library, key = { it.file.absolutePath }) { clip ->
-            val recent = recents.firstOrNull { it.file.absolutePath == clip.file.absolutePath }
-            DiskRow(
-                clip,
-                recent,
-                outfit,
-                onOpen = { playKnown(clip.file, false) },
-                onStart = { playKnown(clip.file, true) },
-            )
-            Spacer(Modifier.height(8.dp))
+        if (!searching) {
+            gridItems(shelves, key = { "dir:${opened.joinToString("/")}/${it.name}" }, span = { GridItemSpan(maxLineSpan) }) { shelf ->
+                FolderRow(shelf.name, shelf.count, outfit) { stack = opened + shelf.name }
+            }
+        }
+        if (asGrid) {
+            gridItems(loose, key = { it.file.absolutePath }) { clip ->
+                DiskCell(clip, outfit) { playKnown(clip.file, false) }
+            }
+        } else {
+            gridItems(loose, key = { it.file.absolutePath }, span = { GridItemSpan(maxLineSpan) }) { clip ->
+                val recent = recents.firstOrNull { it.file.absolutePath == clip.file.absolutePath }
+                DiskRow(clip, recent, searching, outfit, { playKnown(clip.file, false) }, { playKnown(clip.file, true) })
+            }
         }
         if (recents.isNotEmpty()) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Spacer(Modifier.height(28.dp))
                 Text("CONTINUE", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
                 Spacer(Modifier.height(12.dp))
                 if (shown.isEmpty()) Text("Nothing unfinished.", color = CreamDim, fontFamily = outfit, fontSize = 14.sp)
             }
-            items(shown, key = { "recent-${it.file.absolutePath}" }) { item ->
+            gridItems(shown, key = { "recent-${it.file.absolutePath}" }, span = { GridItemSpan(maxLineSpan) }) { item ->
                 RecentRow(item, outfit, { engine.open(item.file, if (unfinished(item)) item.positionMs else 0L) }, { engine.open(item.file, 0) }, { engine.forget(item.file.absolutePath) })
-                Spacer(Modifier.height(8.dp))
             }
+        }
         }
     }
 }
 
 @Composable
-private fun DiskRow(clip: DiskVideo, recent: Desk?, outfit: FontFamily, onOpen: () -> Unit, onStart: () -> Unit) {
+private fun DiskRow(clip: DiskVideo, recent: Desk?, showFolder: Boolean, outfit: FontFamily, onOpen: () -> Unit, onStart: () -> Unit) {
     val progress = if (recent != null && recent.durationMs > 0) (recent.positionMs.toFloat() / recent.durationMs).coerceIn(0f, 1f) else 0f
-    val folder = clip.file.parentFile?.name ?: "Computer"
-    val detail = buildString {
-        append(folder)
-        append("  ·  ")
-        append(formatSize(clip.size))
-    }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF101218)).clickable(onClick = onOpen)) {
-            Poster(clip.file, Modifier.fillMaxSize())
-            if (progress > 0.02f && progress < 0.97f) {
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Hairline)) {
-                    Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+    val detail = clipDetail(clip, showFolder)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).padding(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Poster(clip.file, Modifier.size(112.dp, 64.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpen))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
+                Text(clip.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (detail.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (progress > 0.02f && progress < 0.97f) {
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Hairline)) {
+                        Box(Modifier.fillMaxWidth(progress).height(3.dp).background(Tungsten))
+                    }
                 }
             }
         }
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(clip.file.name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(onClick = onOpen))
-            Spacer(Modifier.height(6.dp))
-            Text(detail, color = CreamDim, fontFamily = outfit, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(10.dp))
-            Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
+        Spacer(Modifier.height(10.dp))
+        Text("From start", color = Tungsten, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onStart))
+    }
+}
+
+@Composable
+private fun DiskCell(clip: DiskVideo, outfit: FontFamily, onOpen: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).clickable(onClick = onOpen)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF101218))) {
+            Poster(clip.file, Modifier.fillMaxSize())
         }
+        Text(
+            clip.file.name,
+            color = Cream,
+            fontFamily = outfit,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun FolderRow(name: String, count: Int, outfit: FontFamily, onOpen: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(InkRaised).clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(name, color = Cream, fontFamily = outfit, fontWeight = FontWeight.Medium, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(4.dp))
+        Text(if (count == 1) "1 video" else "$count videos", color = CreamDim, fontFamily = outfit, fontSize = 12.sp)
     }
 }
 
@@ -565,6 +621,76 @@ private fun formatTime(ms: Long): String {
     val m = (safe / 60) % 60
     val h = safe / 3600
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+private data class Shelf(val name: String, val count: Int)
+
+private fun libraryDir(file: File): String {
+    val dir = file.parentFile?.absoluteFile ?: return ""
+    val home = File(System.getProperty("user.home")).absoluteFile
+    val dirPath = dir.toPath()
+    val homePath = home.toPath()
+    if (dirPath.startsWith(homePath)) return homePath.relativize(dirPath).toString().replace('\\', '/').trim('/')
+    val abs = dir.absolutePath.replace('\\', '/')
+    if (abs.startsWith("/Volumes/")) return abs.removePrefix("/Volumes/").trim('/')
+    val root = dirPath.root ?: return dir.name
+    val rest = root.relativize(dirPath).toString().replace('\\', '/').trim('/')
+    val drive = root.toString().trim('/', '\\').ifEmpty { "Computer" }
+    return if (rest.isEmpty()) drive else "$drive/$rest"
+}
+
+private fun inFolder(path: String, prefix: String): Boolean {
+    val dir = path.trim('/')
+    return dir == prefix || dir.startsWith("$prefix/")
+}
+
+private fun foldersHere(clips: List<DiskVideo>, stack: List<String>): List<Shelf> {
+    val prefix = stack.joinToString("/")
+    val counts = LinkedHashMap<String, Int>()
+    for (clip in clips) {
+        val rest = remainder(libraryDir(clip.file), prefix) ?: continue
+        if (rest.isEmpty()) continue
+        val name = rest.substringBefore('/')
+        counts[name] = (counts[name] ?: 0) + 1
+    }
+    return counts.map { Shelf(it.key, it.value) }.sortedBy { it.name.lowercase() }
+}
+
+private fun clipsHere(clips: List<DiskVideo>, stack: List<String>): List<DiskVideo> {
+    val prefix = stack.joinToString("/")
+    return clips.filter { remainder(libraryDir(it.file), prefix) == "" }
+}
+
+private fun remainder(path: String, prefix: String): String? {
+    val dir = path.trim('/')
+    return when {
+        prefix.isEmpty() -> dir
+        dir == prefix -> ""
+        dir.startsWith("$prefix/") -> dir.removePrefix("$prefix/")
+        else -> null
+    }
+}
+
+private fun sortClips(clips: List<DiskVideo>, mode: Int): List<DiskVideo> {
+    return if (mode == 1) clips.sortedBy { it.file.name.lowercase() } else clips.sortedByDescending { it.modified }
+}
+
+private fun countLine(videos: Int, folders: Int): String {
+    val parts = ArrayList<String>(2)
+    if (folders > 0) parts += if (folders == 1) "1 folder" else "$folders folders"
+    if (videos > 0) parts += if (videos == 1) "1 video" else "$videos videos"
+    return parts.joinToString("  ·  ").ifEmpty { "Nothing here." }
+}
+
+private fun clipDetail(clip: DiskVideo, showFolder: Boolean): String {
+    return buildString {
+        if (showFolder) {
+            val folder = clip.file.parentFile?.name
+            if (!folder.isNullOrBlank()) append(folder)
+        }
+        if (isNotEmpty()) append("  ·  ")
+        append(formatSize(clip.size))
+    }
 }
 
 private fun pick(parent: java.awt.Frame?, multiple: Boolean): List<File>? {

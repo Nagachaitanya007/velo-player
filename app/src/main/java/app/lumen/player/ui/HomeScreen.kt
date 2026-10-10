@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -77,32 +80,54 @@ fun HomeScreen(
     var armClear by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var librarySort by remember { mutableIntStateOf(0) }
+    var asGrid by remember { mutableStateOf(false) }
+    var stack by remember { mutableStateOf(listOf<String>()) }
     val resume = recents.firstOrNull { unfinished(it) }
     val shown = recents
         .let { list -> if (unfinishedOnly) list.filter { unfinished(it) } else list }
         .let { list -> if (sortByName) list.sortedBy { it.title.lowercase() } else list }
     val needle = query.trim()
-    val library = videos
-        .let { list ->
-            if (needle.isEmpty()) list
-            else list.filter {
-                it.title.contains(needle, true) || it.folder.contains(needle, true)
+    val searching = needle.isNotEmpty()
+    LaunchedEffect(videos, stack) {
+        val prefix = stack.joinToString("/")
+        val alive = prefix.isEmpty() || videos.any { inFolder(it.path, prefix) }
+        if (!alive) stack = emptyList()
+    }
+    val opened = if (searching) emptyList() else stack
+    val shelves = if (searching) emptyList() else foldersHere(videos, opened)
+    val loose = sortVideos(
+        if (searching) {
+            videos.filter {
+                it.title.contains(needle, true) || it.folder.contains(needle, true) || it.path.contains(needle, true)
             }
-        }
-        .let { list ->
-            when (librarySort) {
-                1 -> list.sortedBy { it.title.lowercase() }
-                2 -> list.sortedWith(compareBy({ it.folder.lowercase() }, { it.title.lowercase() }))
-                else -> list.sortedByDescending { it.addedMs }
-            }
-        }
+        } else {
+            videosHere(videos, opened)
+        },
+        librarySort,
+    )
     val recentByUri = remember(recents) { recents.associateBy { it.uri } }
+    val libraryLabel = when {
+        scanning && videos.isEmpty() -> "Looking through this phone…"
+        searching && loose.isEmpty() -> "Nothing matches."
+        videos.isEmpty() -> "No videos on this phone yet."
+        searching -> countLine(loose.size, 0)
+        else -> countLine(loose.size, shelves.size)
+    }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
-    ) {
-        item {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = if (!asGrid) 1 else when {
+            maxWidth >= 1100.dp -> 4
+            maxWidth >= 760.dp -> 3
+            else -> 2
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -178,14 +203,37 @@ fun HomeScreen(
                 QuietChip("Browse files", false, onOpen)
             }
             Spacer(Modifier.height(36.dp))
-            Text(
-                "ON THIS PHONE",
-                color = CreamDim,
-                fontFamily = Outfit,
-                fontWeight = FontWeight(620),
-                fontSize = 12.sp,
-                letterSpacing = 1.6.sp,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!searching && opened.isNotEmpty()) {
+                    Text(
+                        "Back",
+                        color = Tungsten,
+                        fontFamily = Outfit,
+                        fontWeight = FontWeight(620),
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable { stack = stack.dropLast(1) },
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        opened.last(),
+                        color = Cream,
+                        fontFamily = Outfit,
+                        fontWeight = FontWeight(620),
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Text(
+                        if (searching) "SEARCH" else "ON THIS PHONE",
+                        color = CreamDim,
+                        fontFamily = Outfit,
+                        fontWeight = FontWeight(620),
+                        fontSize = 12.sp,
+                        letterSpacing = 1.6.sp,
+                    )
+                }
+            }
             Spacer(Modifier.height(12.dp))
             if (!canSeeVideos) {
                 Box(
@@ -236,17 +284,12 @@ fun HomeScreen(
                 ) {
                     QuietChip("Newest", librarySort == 0) { librarySort = 0 }
                     QuietChip("A–Z", librarySort == 1) { librarySort = 1 }
-                    QuietChip("Folder", librarySort == 2) { librarySort = 2 }
+                    QuietChip(if (asGrid) "Grid" else "Rows", asGrid) { asGrid = !asGrid }
                     QuietChip("Refresh", false, onRefresh)
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    when {
-                        scanning && videos.isEmpty() -> "Looking through this phone…"
-                        needle.isNotEmpty() && library.isEmpty() -> "Nothing matches."
-                        videos.isEmpty() -> "No videos on this phone yet."
-                        else -> if (library.size == 1) "1 video" else "${library.size} videos"
-                    },
+                    libraryLabel,
                     color = CreamDim,
                     fontFamily = Outfit,
                     fontSize = 13.sp,
@@ -254,14 +297,24 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(12.dp))
         }
+        if (canSeeVideos && !searching) {
+            gridItems(shelves, key = { "dir:${opened.joinToString("/")}/${it.name}" }, span = { GridItemSpan(maxLineSpan) }) { shelf ->
+                FolderRow(shelf.name, shelf.count) { stack = opened + shelf.name }
+            }
+        }
         if (canSeeVideos) {
-            items(library, key = { it.uri }) { video ->
-                VideoRow(video, recentByUri[video.uri], onVideo, onVideoFromStart)
-                Spacer(Modifier.height(8.dp))
+            if (asGrid) {
+                gridItems(loose, key = { it.uri }) { video ->
+                    VideoCell(video, recentByUri[video.uri], onVideo)
+                }
+            } else {
+                gridItems(loose, key = { it.uri }, span = { GridItemSpan(maxLineSpan) }) { video ->
+                    VideoRow(video, recentByUri[video.uri], searching, onVideo, onVideoFromStart)
+                }
             }
         }
         if (recents.isNotEmpty()) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Spacer(Modifier.height(28.dp))
                 Text(
                     "CONTINUE",
@@ -281,10 +334,10 @@ fun HomeScreen(
                     )
                 }
             }
-            items(shown, key = { "recent-${it.uri}" }) { item ->
+            gridItems(shown, key = { "recent-${it.uri}" }, span = { GridItemSpan(maxLineSpan) }) { item ->
                 RecentRow(item, onRecent, onFromStart, onForget)
-                Spacer(Modifier.height(8.dp))
             }
+        }
         }
     }
 }
@@ -312,35 +365,103 @@ private fun QuietChip(label: String, on: Boolean, onClick: () -> Unit) {
 private fun VideoRow(
     video: PhoneVideo,
     recent: RecentItem?,
+    showFolder: Boolean,
     onVideo: (PhoneVideo) -> Unit,
     onFromStart: (PhoneVideo) -> Unit,
 ) {
     val progress = if (recent != null && recent.durationMs > 0) {
         (recent.positionMs.toFloat() / recent.durationMs).coerceIn(0f, 1f)
     } else 0f
-    val detail = buildString {
-        append(video.folder)
-        if (video.durationMs > 0) {
-            append("  ·  ")
-            append(formatTime(video.durationMs))
-        }
-        if (video.sizeBytes > 0) {
-            append("  ·  ")
-            append(formatSize(video.sizeBytes))
-        }
-    }
+    val detail = videoDetail(video, showFolder)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(InkRaised),
+            .background(InkRaised)
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Thumb(
+                video.uri,
+                Modifier
+                    .size(112.dp, 64.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onVideo(video) },
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f).clickable { onVideo(video) }) {
+                Text(
+                    video.title,
+                    color = Cream,
+                    fontFamily = Outfit,
+                    fontWeight = FontWeight(520),
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (detail.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        detail,
+                        color = CreamDim,
+                        fontFamily = Outfit,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (progress > 0.02f && progress < 0.97f) {
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Hairline),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(progress)
+                                .height(3.dp)
+                                .background(Tungsten),
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "From start",
+            color = Tungsten,
+            fontFamily = Outfit,
+            fontWeight = FontWeight(520),
+            fontSize = 13.sp,
+            modifier = Modifier.clickable { onFromStart(video) },
+        )
+    }
+}
+
+@Composable
+private fun VideoCell(
+    video: PhoneVideo,
+    recent: RecentItem?,
+    onVideo: (PhoneVideo) -> Unit,
+) {
+    val progress = if (recent != null && recent.durationMs > 0) {
+        (recent.positionMs.toFloat() / recent.durationMs).coerceIn(0f, 1f)
+    } else 0f
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(InkRaised)
+            .clickable { onVideo(video) },
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .background(PosterWash)
-                .clickable { onVideo(video) },
+                .background(PosterWash),
         ) {
             Thumb(video.uri, Modifier.fillMaxSize())
             if (progress > 0.02f && progress < 0.97f) {
@@ -360,36 +481,45 @@ private fun VideoRow(
                 }
             }
         }
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(
-                video.title,
-                color = Cream,
-                fontFamily = Outfit,
-                fontWeight = FontWeight(520),
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.clickable { onVideo(video) },
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                detail,
-                color = CreamDim,
-                fontFamily = Outfit,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "From start",
-                color = Tungsten,
-                fontFamily = Outfit,
-                fontWeight = FontWeight(520),
-                fontSize = 13.sp,
-                modifier = Modifier.clickable { onFromStart(video) },
-            )
-        }
+        Text(
+            video.title,
+            color = Cream,
+            fontFamily = Outfit,
+            fontWeight = FontWeight(520),
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun FolderRow(name: String, count: Int, onOpen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(InkRaised)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(
+            name,
+            color = Cream,
+            fontFamily = Outfit,
+            fontWeight = FontWeight(520),
+            fontSize = 16.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (count == 1) "1 video" else "$count videos",
+            color = CreamDim,
+            fontFamily = Outfit,
+            fontSize = 12.sp,
+        )
     }
 }
 
@@ -511,4 +641,63 @@ private fun formatSize(bytes: Long): String {
     val mb = bytes / 1_048_576.0
     if (mb >= 1.0) return "%.0f MB".format(mb)
     return "${(bytes / 1024).coerceAtLeast(1)} KB"
+}
+
+private data class Shelf(val name: String, val count: Int)
+
+private fun inFolder(path: String, prefix: String): Boolean {
+    val dir = path.trim('/')
+    return dir == prefix || dir.startsWith("$prefix/")
+}
+
+private fun foldersHere(videos: List<PhoneVideo>, stack: List<String>): List<Shelf> {
+    val prefix = stack.joinToString("/")
+    val counts = LinkedHashMap<String, Int>()
+    for (video in videos) {
+        val rest = remainder(video.path, prefix) ?: continue
+        if (rest.isEmpty()) continue
+        val name = rest.substringBefore('/')
+        counts[name] = (counts[name] ?: 0) + 1
+    }
+    return counts.map { Shelf(it.key, it.value) }.sortedBy { it.name.lowercase() }
+}
+
+private fun videosHere(videos: List<PhoneVideo>, stack: List<String>): List<PhoneVideo> {
+    val prefix = stack.joinToString("/")
+    return videos.filter { remainder(it.path, prefix) == "" }
+}
+
+private fun remainder(path: String, prefix: String): String? {
+    val dir = path.trim('/')
+    return when {
+        prefix.isEmpty() -> dir
+        dir == prefix -> ""
+        dir.startsWith("$prefix/") -> dir.removePrefix("$prefix/")
+        else -> null
+    }
+}
+
+private fun sortVideos(videos: List<PhoneVideo>, mode: Int): List<PhoneVideo> {
+    return if (mode == 1) videos.sortedBy { it.title.lowercase() } else videos.sortedByDescending { it.addedMs }
+}
+
+private fun countLine(videos: Int, folders: Int): String {
+    val parts = ArrayList<String>(2)
+    if (folders > 0) parts += if (folders == 1) "1 folder" else "$folders folders"
+    if (videos > 0) parts += if (videos == 1) "1 video" else "$videos videos"
+    return parts.joinToString("  ·  ").ifEmpty { "Nothing here." }
+}
+
+private fun videoDetail(video: PhoneVideo, showFolder: Boolean): String {
+    return buildString {
+        if (showFolder && video.folder.isNotBlank()) append(video.folder)
+        if (video.durationMs > 0) {
+            if (isNotEmpty()) append("  ·  ")
+            append(formatTime(video.durationMs))
+        }
+        if (video.sizeBytes > 0) {
+            if (isNotEmpty()) append("  ·  ")
+            append(formatSize(video.sizeBytes))
+        }
+    }
 }

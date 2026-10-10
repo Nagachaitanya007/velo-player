@@ -12,6 +12,7 @@ data class PhoneVideo(
     val uri: String,
     val title: String,
     val folder: String,
+    val path: String,
     val durationMs: Long,
     val sizeBytes: Long,
     val addedMs: Long,
@@ -131,6 +132,7 @@ object VideoCatalog {
                     uri = ContentUris.withAppendedId(collection, id).toString(),
                     title = name,
                     folder = folder,
+                    path = place(rows, relCol, dataCol, folder),
                     durationMs = duration,
                     sizeBytes = size,
                     addedMs = added,
@@ -168,5 +170,26 @@ object VideoCatalog {
             if (!data.isNullOrBlank()) return File(data).parentFile?.name ?: "Phone"
         }
         return "Phone"
+    }
+
+    private fun place(rows: Cursor, relCol: Int, dataCol: Int, folder: String): String {
+        if (relCol >= 0) {
+            val rel = rows.getString(relCol)?.trim().orEmpty().trim('/')
+            if (rel.isNotEmpty()) return rel
+        }
+        if (dataCol >= 0) {
+            val data = rows.getString(dataCol)
+            if (!data.isNullOrBlank()) {
+                val parent = File(data).parent?.replace('\\', '/')
+                if (!parent.isNullOrBlank()) {
+                    val emulated = "/emulated/0/"
+                    val at = parent.indexOf(emulated)
+                    if (at >= 0) return parent.substring(at + emulated.length).trim('/')
+                    val storage = Regex("^/storage/[^/]+/(.+)$").find(parent)
+                    if (storage != null) return storage.groupValues[1].trim('/')
+                }
+            }
+        }
+        return folder
     }
 }

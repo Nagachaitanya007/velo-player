@@ -82,15 +82,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v1.2.0" Velo-windows.exe Velo-mac.dmg \
+          gh release create "v1.3.0" Velo-windows.exe Velo-mac.dmg \
             --repo Nagachaitanya007/velo-player \
-            --title "Velo 1.2.0" \
+            --title "Velo 1.3.0" \
             --notes "$(cat <<'EOF'
-          Velo 1.2.0. Video cards on the home screen show a thumbnail, on the phone and on the computer.
+          Velo 1.3.0. The library opens by folder, and you can switch between compact rows and a grid.
 
           - Velo-windows.exe is the Windows installer.
           - Velo-mac.dmg is for Apple silicon.
           - Velo.apk is the Android build, added to this release.
+
+          Rows is the default. Grid is two columns on a phone and more on a wide window. Search looks through every folder.
 
           On a Mac, if the system says the app cannot be opened, right-click Velo and choose Open.
 

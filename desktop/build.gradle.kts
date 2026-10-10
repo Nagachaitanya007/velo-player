@@ -23,7 +23,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Dmg)
             packageName = "Velo"
-            packageVersion = "1.3.0"
+            packageVersion = "1.3.1"
             description = "Velo"
             vendor = "Velo"
             includeAllModules = true

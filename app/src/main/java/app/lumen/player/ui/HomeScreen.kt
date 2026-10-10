@@ -128,6 +128,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -296,6 +297,7 @@ fun HomeScreen(
                 )
             }
             Spacer(Modifier.height(12.dp))
+            }
         }
         if (canSeeVideos && !searching) {
             gridItems(shelves, key = { "dir:${opened.joinToString("/")}/${it.name}" }, span = { GridItemSpan(maxLineSpan) }) { shelf ->
@@ -315,23 +317,25 @@ fun HomeScreen(
         }
         if (recents.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Spacer(Modifier.height(28.dp))
-                Text(
-                    "CONTINUE",
-                    color = CreamDim,
-                    fontFamily = Outfit,
-                    fontWeight = FontWeight(620),
-                    fontSize = 12.sp,
-                    letterSpacing = 1.6.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                if (shown.isEmpty()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.height(28.dp))
                     Text(
-                        "Nothing unfinished.",
+                        "CONTINUE",
                         color = CreamDim,
                         fontFamily = Outfit,
-                        fontSize = 14.sp,
+                        fontWeight = FontWeight(620),
+                        fontSize = 12.sp,
+                        letterSpacing = 1.6.sp,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    if (shown.isEmpty()) {
+                        Text(
+                            "Nothing unfinished.",
+                            color = CreamDim,
+                            fontFamily = Outfit,
+                            fontSize = 14.sp,
+                        )
+                    }
                 }
             }
             gridItems(shown, key = { "recent-${it.uri}" }, span = { GridItemSpan(maxLineSpan) }) { item ->

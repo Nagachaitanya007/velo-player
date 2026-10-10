@@ -240,6 +240,7 @@ private fun Home(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(14.dp).clip(CircleShape).background(Tungsten))
                 Spacer(Modifier.width(10.dp))
@@ -318,6 +319,7 @@ private fun Home(
             Spacer(Modifier.height(12.dp))
             Text(libraryLabel, color = CreamDim, fontFamily = outfit, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
+            }
         }
         if (!searching) {
             gridItems(shelves, key = { "dir:${opened.joinToString("/")}/${it.name}" }, span = { GridItemSpan(maxLineSpan) }) { shelf ->
@@ -336,10 +338,12 @@ private fun Home(
         }
         if (recents.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.fillMaxWidth()) {
                 Spacer(Modifier.height(28.dp))
                 Text("CONTINUE", color = CreamDim, fontFamily = outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 1.6.sp)
                 Spacer(Modifier.height(12.dp))
                 if (shown.isEmpty()) Text("Nothing unfinished.", color = CreamDim, fontFamily = outfit, fontSize = 14.sp)
+                }
             }
             gridItems(shown, key = { "recent-${it.file.absolutePath}" }, span = { GridItemSpan(maxLineSpan) }) { item ->
                 RecentRow(item, outfit, { engine.open(item.file, if (unfinished(item)) item.positionMs else 0L) }, { engine.open(item.file, 0) }, { engine.forget(item.file.absolutePath) })

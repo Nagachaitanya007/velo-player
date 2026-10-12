@@ -8,7 +8,7 @@ Files stay on the device. Nothing is uploaded.
 
 ## Android
 
-Open the latest Release and download `Velo.apk`. The 1.3.1 build is [Velo.apk](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.3.1/Velo.apk). Open the file on an Android phone. Android will ask for video access so it can list what is already on the phone. It will also warn that the developer is unknown. That is expected for a test install.
+Open the latest Release and download `Velo.apk`. The 1.3.2 build is [Velo.apk](https://github.com/Nagachaitanya007/velo-player/releases/download/v1.3.2/Velo.apk). Open the file on an Android phone. Android will ask for video access so it can list what is already on the phone. It will also warn that the developer is unknown. That is expected for a test install.
 
 The build is signed for sideloading, not for the Play Store.
 

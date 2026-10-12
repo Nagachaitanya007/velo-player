@@ -5,6 +5,7 @@ import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -34,9 +35,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import app.lumen.player.data.LibraryStore
 import app.lumen.player.data.PhoneVideo
 import app.lumen.player.data.VideoCatalog
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private var unfinishedOnly by mutableStateOf(false)
     private var sortByName by mutableStateOf(false)
     private var inPip by mutableStateOf(false)
+    private var landscape by mutableStateOf(false)
     private var bound = false
     private var binding = false
     private var pending: ((PlayerEngine) -> Unit)? = null
@@ -107,6 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
         diskRecents = library.read()
         canSeeVideos = hasVideoAccess()
@@ -198,6 +204,14 @@ class MainActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+        landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+        syncStage()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+        syncStage()
     }
 
     override fun onUserLeaveHint() {
@@ -239,6 +253,32 @@ class MainActivity : ComponentActivity() {
             stopService(Intent(this, PlayerService::class.java))
         }
         super.onDestroy()
+    }
+
+    internal fun syncStage() {
+        val playing = engine?.state?.value?.phase == Phase.Player && !inPip
+        requestedOrientation = if (playing) {
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        val fill = playing && landscape
+        if (fill) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (fill) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                }
+            }
+        }
     }
 
     private fun openRecent(item: RecentItem, resume: Boolean) {
@@ -475,9 +515,14 @@ private fun PlayingOrHome(
 ) {
     val ui by engine.state.collectAsState()
     val view = LocalView.current
+    val activity = LocalContext.current as MainActivity
     DisposableEffect(ui.playing, ui.phase) {
         view.keepScreenOn = ui.phase == Phase.Player && ui.playing
-        onDispose { view.keepScreenOn = false }
+        activity.syncStage()
+        onDispose {
+            view.keepScreenOn = false
+            activity.syncStage()
+        }
     }
     if (ui.phase == Phase.Player) {
         PlayerScreen(
